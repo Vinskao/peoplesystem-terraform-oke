@@ -115,10 +115,10 @@ variable "operator_install_stern" {
 
 variable "operator_shape" {
   default = {
-    shape            = "VM.Standard.E4.Flex",
+    shape            = "VM.Standard.A1.Flex",
     ocpus            = 1,
     memory           = 4,
-    boot_volume_size = 50
+    boot_volume_size = 46.6
   }
   description = "Shape of the created operator instance."
   type        = map(any)

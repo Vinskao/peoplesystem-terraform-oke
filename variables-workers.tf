@@ -50,7 +50,7 @@ variable "worker_pool_mode" {
 }
 
 variable "worker_pool_size" {
-  default     = 0
+  default     = 4
   description = "Default size for worker pools when unspecified on a pool."
   type        = number
 }
@@ -154,10 +154,10 @@ variable "worker_image_os_version" {
 
 variable "worker_shape" {
   default = {
-    shape            = "VM.Standard.E4.Flex"
-    ocpus            = 2
-    memory           = 16
-    boot_volume_size = 50
+    shape            = "VM.Standard.A1.Flex"
+    ocpus            = 1
+    memory           = 6
+    boot_volume_size = 46.6
 
     # https://docs.oracle.com/en-us/iaas/Content/Block/Concepts/blockvolumeperformance.htm
     # Supported for mode = "cluster-network" | "instance-pool" | "instance" (self-managed) only
