@@ -157,7 +157,7 @@ variable "worker_shape" {
     shape            = "VM.Standard.A1.Flex"
     ocpus            = 1
     memory           = 6
-    boot_volume_size = 46.6
+    boot_volume_size = 50
 
     # https://docs.oracle.com/en-us/iaas/Content/Block/Concepts/blockvolumeperformance.htm
     # Supported for mode = "cluster-network" | "instance-pool" | "instance" (self-managed) only

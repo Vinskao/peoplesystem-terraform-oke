@@ -1,61 +1,47 @@
 # Terraform OKE for Oracle Cloud Infrastructure
 
-[![Documentation](https://github.com/oracle-terraform-modules/terraform-oci-oke/actions/workflows/mdbook.yaml/badge.svg?branch=5.x-mdbook&status=Documentation)](https://oracle-terraform-modules.github.io/terraform-oci-oke/)
-
 ## 專案概述
 
-此專案為 Oracle Cloud Infrastructure (OCI) 提供可重複使用的 Terraform 模組，用於部署 [OCI Kubernetes Engine (OKE)](https://docs.cloud.oracle.com/iaas/Content/ContEng/Concepts/contengoverview.htm) 叢集及相關基礎設施。
+此專案為 Oracle Cloud Infrastructure (OCI) 提供可重複使用的 Terraform 模組，用於部署 OCI Kubernetes Engine (OKE) 叢集。
 
-## 技術規格分析
+## 系統配置規格
 
 ### 版本要求
 - **Terraform**: >= 1.3.0
 - **OCI Provider**: >= 7.6.0
-- **Kubernetes**: v1.26.2 (預設)
-- **CNI**: flannel (預設) 或 npn
-- **處理器架構**: ARM (Ampere Altra)
+- **Kubernetes**: v1.29.1
+- **CNI**: flannel
+- **叢集類型**: basic
 
-### 核心組件
+### 硬體配置
 
-#### 1. 網路架構 (Network)
-- **VCN**: 預設 CIDR `10.0.0.0/16`
-- **子網路**: 
-  - bastion, operator, cp (control plane)
-  - int_lb, pub_lb (load balancers)
-  - workers, pods
-- **閘道**: NAT Gateway, Internet Gateway, Service Gateway
-- **安全群組**: 針對各組件分別配置
+| 配置項目 | 數值 | 說明 |
+|---------|------|------|
+| **VM Shape** | `VM.Standard.A1.Flex` | ARM 架構的彈性虛擬機 |
+| **CPU 核心數** | `1 OCPU` | 每個節點 1 個 OCPU |
+| **記憶體** | `6 GB` | 每個節點 6GB 記憶體 |
+| **節點數量** | `4 個` | 總共 4 個工作節點 |
+| **總 CPU** | `4 OCPUs` | 總計 4 個 OCPU |
+| **總記憶體** | `24 GB` | 總計 24GB 記憶體 |
+| **處理器架構** | `ARM (Ampere Altra)` | 高效能 ARM 處理器 |
 
-#### 2. 叢集配置 (Cluster)
-- **類型**: basic 或 enhanced
-- **控制平面**: 可選擇公開/私有
-- **Pod CIDR**: `10.244.0.0/16`
-- **Service CIDR**: `10.96.0.0/16`
-- **負載平衡器**: public, internal, 或 both
+### 網路配置
 
-#### 3. 工作節點 (Workers)
-- **預設規格**: VM.Standard.A1.Flex (1 OCPU, 6GB RAM, 46.6GB 磁碟)
-- **節點數量**: 4 個節點 (總計 4 OCPUs, 24GB RAM, 186.4GB 磁碟)
-- **處理器架構**: ARM (Ampere Altra)
-- **管理模式**: 
-  - node-pool (預設)
-  - virtual-node-pool
-  - instance
-  - instance-pool
-  - cluster-network
-- **映像檔**: Oracle Linux 8 (預設)
+| 配置項目 | 數值 | 說明 |
+|---------|------|------|
+| **VCN CIDR** | `10.0.0.0/16` | 虛擬雲端網路 |
+| **Pod CIDR** | `10.244.0.0/16` | Pod 網路範圍 |
+| **Service CIDR** | `10.96.0.0/16` | Service 網路範圍 |
+| **負載平衡器** | `both` | 支援公開和內部負載平衡器 |
 
-#### 4. 身份與存取管理 (IAM)
-- **動態群組**: 自動建立所需權限
-- **政策**: 叢集、工作節點、操作員存取權限
-- **標籤**: 支援自由格式和定義標籤
+### 安全配置
 
-#### 5. 擴展功能 (Extensions)
-- **監控**: Prometheus, Grafana
-- **網路**: Cilium, Multus
-- **安全**: Gatekeeper
-- **自動擴展**: Cluster Autoscaler
-- **GitOps**: ArgoCD
+| 配置項目 | 數值 | 說明 |
+|---------|------|------|
+| **控制平面** | `private` | 私有控制平面 |
+| **工作節點** | `private` | 私有工作節點 |
+| **SSH 存取** | `enabled` | 透過堡壘主機存取 |
+| **網路安全群組** | `enabled` | 自動配置安全規則 |
 
 ## 建置步驟
 
@@ -72,6 +58,8 @@
 ```bash
 # 設定 OCI 配置檔案
 oci setup config
+oci session authenticate --profile peoplesystem-v2 --region ap-singapore-2
+
 
 # 或使用 API 金鑰
 export TF_VAR_api_fingerprint="your_fingerprint"
@@ -162,7 +150,7 @@ worker_pools = {
       shape = "VM.Standard.A1.Flex"
       ocpus = 1
       memory = 6
-      boot_volume_size = 46.6
+      boot_volume_size = 50
     }
   }
   pool2 = {

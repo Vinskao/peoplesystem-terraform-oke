@@ -20,3 +20,5 @@ generated/**
 
 # Generated documentation
 docs/book
+
+README-private.md
