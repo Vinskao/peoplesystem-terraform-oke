@@ -22,3 +22,9 @@ generated/**
 docs/book
 
 README-private.md
+
+tfplan
+THIRD_PARTY_LICENSES
+
+.DS_Store
+*.bak

@@ -6,7 +6,7 @@ provider "oci" {
 
 provider "oci" {
   config_file_profile = "peoplesystem-v2"
-  region              = var.home_region
+  region              = var.region
   alias               = "home"
   auth                = "SecurityToken"
 }

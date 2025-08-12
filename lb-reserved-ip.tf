@@ -1,7 +1,9 @@
 resource "oci_core_public_ip" "service_lb_reserved" {
+  # Safe during destroy: do not depend on network/module outputs
   compartment_id = coalesce(var.network_compartment_id, local.compartment_id)
-  display_name   = var.lb_reserved_ip_display_name
-  lifetime       = "RESERVED"
+
+  display_name = var.lb_reserved_ip_display_name
+  lifetime     = "RESERVED"
 
   freeform_tags = try(local.network_freeform_tags, {})
   defined_tags  = try(local.network_defined_tags, {})
