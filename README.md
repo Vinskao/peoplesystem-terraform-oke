@@ -45,6 +45,38 @@
 
 ## 建置步驟
 
+### 架構圖
+```mermaid
+flowchart TB
+  user["User (Mac)"] -->|SSH 22| bastion["Bastion (Public Subnet)"]
+
+  subgraph OCI VCN
+    direction TB
+    ig["Internet Gateway"]:::net
+    nat["NAT Gateway"]:::net
+    sg["Service Gateway"]:::net
+
+    subgraph Public["Public Subnets"]
+      bastion
+      pubLB["Public LB Subnet (OCI LB - Reserved IP)"]
+    end
+
+    subgraph Private["Private Subnets"]
+      cp["OKE Control Plane (Private Endpoint)"]
+      operator["Operator VM"]
+      workers["Worker Nodes (NodePool size=2, A1.Flex 1c/8GB/50GB)"]
+      intLB["Internal LB Subnet"]
+    end
+  end
+
+  bastion -->|SSH Proxy| operator
+  operator -->|kubectl 6443| cp
+  pubLB --> workers
+  intLB --> workers
+
+  classDef net fill:#eee,stroke:#999;
+```
+
 ### 前置準備
 
 1. **安裝必要工具**
@@ -69,115 +101,11 @@ export TF_VAR_tenancy_id="ocid1.tenancy..."
 export TF_VAR_compartment_id="ocid1.compartment..."
 ```
 
-### 快速部署
-
-#### 方法一：完整部署 (推薦)
+### 快速部署（目前使用的方法）
 ```bash
-# 1. 複製範例配置
-cp examples/vars-common.auto.tfvars terraform.tfvars
-cp examples/vars-provider.auto.tfvars terraform.tfvars
-
-# 2. 編輯配置檔案
-vim terraform.tfvars
-# 填入必要的 OCI 資訊
-
-# 3. 初始化 Terraform
-terraform init
-
-# 4. 規劃部署
-terraform plan
-
-# 5. 執行部署
-terraform apply
-```
-
-#### 方法二：使用預設配置檔
-```bash
-# 1. 使用 cluster-workers-only 配置
-cd examples/profiles/cluster-workers-only
-
-# 2. 設定變數
-cp ../../vars-provider.auto.tfvars .
-cp ../../vars-common.auto.tfvars .
-
-# 3. 編輯配置
-vim vars-provider.auto.tfvars
-# 填入 tenancy_id, compartment_id, region
-
-# 4. 部署
 terraform init
 terraform plan
 terraform apply
-```
-
-#### 方法三：網路 + 叢集 + 工作節點
-```bash
-# 1. 使用 network-cluster-workers 配置
-cd examples/profiles/network-cluster-workers
-
-# 2. 設定變數
-cp ../../vars-provider.auto.tfvars .
-cp ../../vars-common.auto.tfvars .
-
-# 3. 部署
-terraform init
-terraform plan
-terraform apply
-```
-
-#### 方法四：ARM 架構部署 (推薦)
-```bash
-# 1. 使用 ARM 架構配置
-cp examples/arm-config.tfvars terraform.tfvars
-
-# 2. 編輯配置檔案
-vim terraform.tfvars
-# 填入必要的 OCI 資訊 (tenancy_id, compartment_id, region)
-
-# 3. 部署
-terraform init
-terraform plan
-terraform apply
-```
-
-### 進階配置
-
-#### 自訂工作節點池
-```hcl
-worker_pools = {
-  pool1 = {
-    size = 4
-    shape = {
-      shape = "VM.Standard.A1.Flex"
-      ocpus = 1
-      memory = 6
-      boot_volume_size = 50
-    }
-  }
-  pool2 = {
-    size = 2
-    shape = {
-      shape = "VM.Standard.A1.Flex"
-      ocpus = 2
-      memory = 12
-    }
-  }
-}
-```
-
-#### 啟用擴展功能
-```hcl
-extensions = {
-  prometheus = {
-    enabled = true
-  }
-  cilium = {
-    enabled = true
-  }
-  autoscaler = {
-    enabled = true
-  }
-}
 ```
 
 ### 驗證部署
@@ -208,21 +136,6 @@ terraform destroy
 terraform destroy -auto-approve
 ```
 
-## 重要注意事項
-
-1. **成本控制**: 部署後記得監控資源使用量
-2. **安全性**: 預設為私有叢集，需要時才啟用公開存取
-3. **備份**: 重要資料請設定適當的備份策略
-4. **監控**: 建議啟用 Prometheus 監控
-5. **更新**: 定期更新 Kubernetes 版本
-
-## 故障排除
-
-### 常見問題
-- **認證錯誤**: 檢查 OCI API 金鑰設定
-- **網路問題**: 確認 VCN 和子網路配置
-- **權限不足**: 檢查 IAM 政策和動態群組
-- **資源限制**: 確認租用戶資源配額
 
 ### 取得支援
 - [官方文件](https://oracle-terraform-modules.github.io/terraform-oci-oke/)
