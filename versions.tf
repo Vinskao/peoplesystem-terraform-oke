@@ -5,6 +5,10 @@ terraform {
   required_version = ">= 1.3.0"
 
   required_providers {
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = ">= 2.20.0"
+    }
     cloudinit = {
       source  = "hashicorp/cloudinit"
       version = ">= 2.2.0"

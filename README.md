@@ -59,6 +59,7 @@
 # 設定 OCI 配置檔案
 oci setup config
 oci session authenticate --profile peoplesystem-v2 --region ap-singapore-2
+oci session refresh-tokens --profile-name peoplesystem-v2
 
 
 # 或使用 API 金鑰

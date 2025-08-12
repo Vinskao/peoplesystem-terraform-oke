@@ -10,3 +10,6 @@ provider "oci" {
   alias               = "home"
   auth                = "SecurityToken"
 }
+
+# Kubernetes provider expects local kubeconfig to be configured already
+provider "kubernetes" {}
