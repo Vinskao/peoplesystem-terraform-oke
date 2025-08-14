@@ -47,14 +47,11 @@
 
 ### 架構圖
 ```mermaid
-flowchart TB
+flowchart LR
   user["User (Mac)"] -->|SSH 22| bastion["Bastion (Public Subnet)"]
 
   subgraph OCI VCN
-    direction TB
-    ig["Internet Gateway"]:::net
-    nat["NAT Gateway"]:::net
-    sg["Service Gateway"]:::net
+    direction LR
 
     subgraph Public["Public Subnets"]
       bastion
@@ -62,22 +59,28 @@ flowchart TB
     end
 
     subgraph Private["Private Subnets"]
-      cp["OKE Control Plane (Private Endpoint)"]
       operator["Operator VM"]
+      cp["OKE Control Plane (Private Endpoint)"]
       workers["Worker Nodes (NodePool size=2, A1.Flex 1c/8GB/50GB)"]
       intLB["Internal LB Subnet"]
     end
 
-    %% Gateway connections (routing targets)
-    bastion --- ig
-    pubLB --- ig
+    subgraph Gateways["Network Gateways"]
+      ig["Internet Gateway"]:::net
+      nat["NAT Gateway"]:::net
+      sg["Service Gateway"]:::net
+    end
 
-    operator --- nat
-    workers --- nat
-    intLB --- nat
+    pubRT["Public Route Table"]:::net --> ig
+    privRT["Private Route Table"]:::net --> nat
+    privRT --> sg
 
-    operator --- sg
-    workers --- sg
+    bastion -.-> pubRT
+    pubLB -.-> pubRT
+
+    operator -.-> privRT
+    workers -.-> privRT
+    intLB -.-> privRT
   end
 
   bastion -->|SSH Proxy| operator
