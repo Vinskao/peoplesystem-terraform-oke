@@ -67,6 +67,17 @@ flowchart TB
       workers["Worker Nodes (NodePool size=2, A1.Flex 1c/8GB/50GB)"]
       intLB["Internal LB Subnet"]
     end
+
+    %% Gateway connections (routing targets)
+    bastion --- ig
+    pubLB --- ig
+
+    operator --- nat
+    workers --- nat
+    intLB --- nat
+
+    operator --- sg
+    workers --- sg
   end
 
   bastion -->|SSH Proxy| operator
@@ -507,6 +518,54 @@ kubectl -n ingress-nginx get svc ingress-nginx-controller -w
 
 說明：
 - 建立 OCI LB 需要等待數十秒到數分鐘；`-w` 會持續觀察直到 EXTERNAL-IP 就緒。
+
+#### 綁定既有 OCI Load Balancer（指定 OCID 建立 ingress-nginx-controller Service）
+
+若你已有一顆固定的 OCI LB（Reserved IP），可用下列方式將 ingress 綁到該 LB 上（會短暫中斷 80/443）：
+
+```bash
+kubectl apply -f - <<'YAML'
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingress-nginx-controller
+  namespace: ingress-nginx
+  annotations:
+    oci.oraclecloud.com/load-balancer-id: "<YOUR_LB_OCID>" # 例：ocid1.loadbalancer.oc1...
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/instance: ingress-nginx
+    app.kubernetes.io/component: controller
+spec:
+  type: LoadBalancer
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: http
+    - name: https
+      port: 443
+      protocol: TCP
+      targetPort: https
+    - name: tcp-5432 # 如需透過 ingress 轉發 Postgres（選用）
+      port: 5432
+      protocol: TCP
+      targetPort: 5432
+  selector:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/instance: ingress-nginx
+    app.kubernetes.io/component: controller
+YAML
+
+# 檢查 IP 與連線
+kubectl -n ingress-nginx get svc ingress-nginx-controller -o wide
+```
+
+注意：
+- 請到 OCI 主控台將該 LB 綁定的 NSG 放行 TCP 80/443（以及 5432 若使用 TCP 轉發）。
+- DNS A 記錄需指向該 LB 的 EXTERNAL-IP。
+
+<!-- moved to README-private.md: Upload .png files via bastion/operator to node /images/people -->
 
 ### 清理資源
 
