@@ -10,3 +10,10 @@ bastion_allowed_cidrs = ["203.0.113.15/32"]
 
 # Avoid blocking on SSH while wiring keys/NSGs; set back to true after connectivity is verified.
 operator_await_cloudinit = false
+
+# Enable outbound egress via NAT for private subnets (minimal change, no public exposure)
+# Ensures workers (and pods, if using IP-native CNI) can reach external services like Supabase:5432
+vcn_create_nat_gateway       = "always"
+allow_worker_internet_access = true
+# If CNI is IP-native/Cilium, also allow pod egress (ignored when using flannel)
+allow_pod_internet_access    = true
