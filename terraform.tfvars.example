@@ -17,3 +17,59 @@ vcn_create_nat_gateway       = "always"
 allow_worker_internet_access = true
 # If CNI is IP-native/Cilium, also allow pod egress (ignored when using flannel)
 allow_pod_internet_access    = true
+
+# Cluster
+create_cluster = true
+
+# Components
+create_bastion       = true
+create_operator      = true
+create_iam_resources = true
+
+# Network
+create_vcn = true
+vcn_cidrs  = ["10.0.0.0/16"]
+# Allow SSH to bastion from your current public IP (replace below). For quick testing you may use "0.0.0.0/0".
+bastion_allowed_cidrs = ["0.0.0.0/0"]
+control_plane_is_public           = false
+assign_public_ip_to_control_plane = false
+kubernetes_version                = "v1.30.1"
+
+# Operator preinstall tools
+operator_install_kubectl_from_repo = true
+operator_install_helm_from_repo    = true
+operator_await_cloudinit           = false
+
+# Workers (add at least one node pool)
+worker_pools = {
+  np1 = {
+    size  = 2
+    shape            = "VM.Standard.A1.Flex"
+    ocpus            = 1
+    memory           = 8
+    boot_volume_size = 50
+  }
+}
+
+# Bastion/Operator shapes (A1, memory tuned to 4G each)
+bastion_shape = {
+  shape            = "VM.Standard.A1.Flex"
+  ocpus            = 1
+  memory           = 4
+  boot_volume_size = 50
+}
+
+operator_shape = {
+  shape            = "VM.Standard.A1.Flex"
+  ocpus            = 1
+  memory           = 4
+  boot_volume_size = 50
+}
+
+
+# Enable NAT; keep full egress for workers
+vcn_create_nat_gateway       = "always"
+allow_worker_internet_access = true
+
+# Do not create reserved public IP for service LB
+create_lb_reserved_ip = false
