@@ -570,6 +570,31 @@ kubectl -n ingress-nginx get svc ingress-nginx-controller -o wide
 
 <!-- moved to README-private.md: Upload .png files via bastion/operator to node /images/people -->
 
+## Windows SSH
+
+如果你已經在 Windows 的 `~/.ssh/config` 設好別名，之後可以直接連：
+
+```powershell
+ssh oke-node
+```
+
+對應範例：
+
+```ssh-config
+Host oke-bastion
+  HostName 140.245.61.250
+  User opc
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+
+Host oke-node
+  HostName 10.0.0.69
+  User opc
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+  ProxyJump oke-bastion
+```
+
 ### 清理資源
 
 ```bash
