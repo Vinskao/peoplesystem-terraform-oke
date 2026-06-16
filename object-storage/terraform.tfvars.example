@@ -1,0 +1,21 @@
+oci_config_profile = "peoplesystem-v2"
+region             = "ap-singapore-2"
+compartment_id     = "ocid1.tenancy.oc1..replace_me"
+
+bucket_name = "replace-with-a-unique-bucket-name"
+
+# Leave namespace null to auto-discover it from OCI.
+namespace = null
+
+access_type           = "NoPublicAccess"
+storage_tier          = "Standard"
+versioning            = "Disabled"
+auto_tiering          = "Disabled"
+object_events_enabled = false
+
+freeform_tags = {
+  managed_by = "terraform"
+  project    = "peoplesystem"
+}
+
+defined_tags = {}
