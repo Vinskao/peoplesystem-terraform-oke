@@ -30,3 +30,8 @@ THIRD_PARTY_LICENSES
 *.bak
 
 kubeconfig
+
+# Local secrets — never commit
+.env.jenkins
+.env.local
+.env.*.local
