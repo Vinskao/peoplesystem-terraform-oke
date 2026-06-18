@@ -168,6 +168,144 @@ terraform output -raw operator_private_ip
 terraform output -raw apiserver_private_host
 ```
 
+### Object Storage：獨立 Terraform 建立流程
+
+`object-storage/` 是獨立的 Terraform root module，狀態檔會和 OKE 叢集分開。建立 bucket 時請在這個子目錄內操作，不要在上層 OKE root 直接 apply。
+
+目前會建立：
+- 一個 `oci_objectstorage_bucket`
+- 預設 `access_type = "NoPublicAccess"`
+- 預設 `storage_tier = "Standard"`
+- bucket resource 設有 `prevent_destroy = true`，避免誤刪 bucket
+
+1) 進入 Object Storage Terraform root
+```bash
+cd peoplesystem-terraform-oke/object-storage
+```
+
+2) 準備變數檔
+```bash
+cp terraform.tfvars.example terraform.tfvars
+```
+
+編輯 `terraform.tfvars`，至少確認：
+- `oci_config_profile`: OCI CLI profile，目前範例是 `peoplesystem-v2`
+- `region`: bucket 所在區域，例如 `ap-singapore-2`
+- `compartment_id`: 要建立 bucket 的 compartment OCID
+- `bucket_name`: bucket 名稱；同一個 Object Storage namespace 內必須唯一
+- `namespace`: 通常保留 `null`，讓 Terraform 自動查
+
+3) 確認 OCI Security Token 還有效
+```bash
+oci session validate --profile peoplesystem-v2
+
+# 如果 token 過期，重新登入或 refresh：
+oci session authenticate --profile-name peoplesystem-v2
+# 或：
+oci session refresh --profile peoplesystem-v2
+```
+
+4) 初始化 Terraform
+```bash
+terraform init
+```
+
+5) 檢查語法與 provider 設定
+```bash
+terraform fmt -check
+terraform validate
+```
+
+6) 先看 plan
+```bash
+terraform plan -out=tfplan
+```
+
+確認 plan 裡只會新增預期的 `oci_objectstorage_bucket.this`。
+
+如果看到類似：
+```text
+Error: 400-InvalidCompartmentId, The compartment ID parameter must be valid.
+Request Target: ... compartmentId=ocid1.tenancy.oc1..replace_me
+```
+
+代表 `terraform.tfvars` 還在使用範例 placeholder。請把 `compartment_id` 改成真實 compartment OCID。可從 OCI Console 的 Identity & Security -> Compartments 複製；如果要建立在 tenancy root，也可以使用 tenancy OCID，但通常建議放在明確的 compartment。
+
+可用 OCI CLI 查 compartment：
+```bash
+oci iam compartment list \
+  --profile peoplesystem-v2 \
+  --auth security_token \
+  --compartment-id-in-subtree true \
+  --all \
+  --query 'data[].{name:name,id:id,"lifecycle-state":"lifecycle-state"}' \
+  --output table
+```
+
+如果 CLI 查詢出現 `TenantNotFound` 或 profile 驗證錯誤，先重新登入對的 OCI tenancy/profile：
+```bash
+oci session authenticate --profile-name peoplesystem-v2 --region ap-singapore-2
+oci session validate --profile peoplesystem-v2 --auth security_token
+```
+
+7) 套用建立 bucket
+```bash
+terraform apply tfplan
+```
+
+8) 查看輸出
+```bash
+terraform output
+terraform output -raw bucket_name
+terraform output -raw bucket_namespace
+```
+
+9) 用 OCI CLI 驗證 bucket 存在
+```bash
+oci os bucket get \
+  --profile peoplesystem-v2 \
+  --namespace "$(terraform output -raw bucket_namespace)" \
+  --bucket-name "$(terraform output -raw bucket_name)"
+```
+
+10) 可選：上傳一個測試檔
+```bash
+echo "hello object storage" > /tmp/oci-object-storage-test.txt
+
+oci os object put \
+  --profile peoplesystem-v2 \
+  --namespace "$(terraform output -raw bucket_namespace)" \
+  --bucket-name "$(terraform output -raw bucket_name)" \
+  --name test/oci-object-storage-test.txt \
+  --file /tmp/oci-object-storage-test.txt
+```
+
+11) 可選：列出物件並清掉測試檔
+```bash
+oci os object list \
+  --profile peoplesystem-v2 \
+  --namespace "$(terraform output -raw bucket_namespace)" \
+  --bucket-name "$(terraform output -raw bucket_name)" \
+  --prefix test/
+
+oci os object delete \
+  --profile peoplesystem-v2 \
+  --namespace "$(terraform output -raw bucket_namespace)" \
+  --bucket-name "$(terraform output -raw bucket_name)" \
+  --object-name test/oci-object-storage-test.txt
+```
+
+清理注意事項：
+- 這個 bucket 有 `prevent_destroy = true`，所以一般 `terraform destroy` 會被擋下。
+- 若真的要刪 bucket，請先備份或清空物件，再移除或調整 `prevent_destroy`，最後才執行 destroy。
+- 不要把 `object-storage/terraform.tfstate` 和上層 OKE root 的 state 混用。
+
+Always Free 記錄：
+- 依 Oracle 官方 Always Free Resources 文件，Object Storage Always Free 在 Free Trial 已結束且帳號是 Always Free only 狀態時，包含 Standard、Infrequent Access、Archive 合計 20 GB，以及每月 50,000 次 Object Storage API requests。
+- 如果帳號是付費帳號，或仍在 Free Trial credits 期間，文件列的是 Standard 10 GB、Infrequent Access 10 GB、Archive 10 GB，以及每月 50,000 次 Object Storage API requests。
+- Free Trial 期間可以儲存超過 Always Free 額度，但如果 trial 結束前沒有升級，帳號會受 Always Free 限制；官方文件提醒若 trial 結束時超過 20 GB 限制，物件可能會被刪除。
+- 官方文件：https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm
+
 ### 上線必裝：Ingress NGINX + cert-manager（Let’s Encrypt 自動續期）
 
 以下指令預設在 `operator` 上執行；或你已在本機設定好 `KUBECONFIG` 也可直接在本機執行。
