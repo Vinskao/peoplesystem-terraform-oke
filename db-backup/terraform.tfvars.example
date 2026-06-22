@@ -1,0 +1,14 @@
+oci_config_profile = "peoplesystem-v2"
+region             = "ap-singapore-2"
+compartment_id     = "ocid1.tenancy.oc1..replace_me"
+
+backup_bucket_name = "peoplesystem-db-backup"
+
+# Leave namespace null to auto-discover.
+namespace = null
+
+# Retention
+archive_after_days = 7
+delete_after_days  = 30
+
+enable_instance_principal_write = true

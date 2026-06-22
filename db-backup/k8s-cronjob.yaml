@@ -1,0 +1,92 @@
+# Daily logical backup of the in-cluster PostgreSQL (db `peoplesystem`) to the OCI
+# `peoplesystem-db-backup` bucket. No stored OCI keys — uploads via Instance Principal
+# (authorized by the dynamic group + policy in this module's iam.tf).
+#
+# Flow: initContainer (postgres image) runs pg_dump into a shared emptyDir, then the main
+# container (OCI CLI image) uploads the dump with `oci os object put --auth instance_principal`.
+#
+# Apply: kubectl apply -f k8s-cronjob.yaml
+# Test now: kubectl create job -n default --from=cronjob/db-backup db-backup-manual
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-backup-config
+  namespace: default
+data:
+  # in-cluster Postgres (the StatefulSet service)
+  PGHOST: "postgres"
+  PGPORT: "5432"
+  PGDATABASE: "peoplesystem"
+  PGUSER: "postgres"
+  # OCI Object Storage target
+  OCI_NAMESPACE: "axbptfyngj39"
+  OCI_BUCKET: "peoplesystem-db-backup"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: db-backup
+  namespace: default
+spec:
+  schedule: "0 19 * * *" # 19:00 UTC = 03:00 Asia/Taipei daily
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        spec:
+          restartPolicy: Never
+          volumes:
+            - name: dump
+              emptyDir: {}
+          initContainers:
+            - name: pg-dump
+              image: postgres:17.4
+              envFrom:
+                - configMapRef:
+                    name: db-backup-config
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres
+                      key: postgres-password
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  TS=$(date -u +%Y%m%dT%H%M%SZ)
+                  OUT="/dump/${PGDATABASE}-${TS}.sql.gz"
+                  echo "Dumping ${PGDATABASE} from ${PGHOST}:${PGPORT} -> ${OUT}"
+                  pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" --no-owner --no-privileges \
+                    | gzip > "$OUT"
+                  ls -lh "$OUT"
+              volumeMounts:
+                - name: dump
+                  mountPath: /dump
+          containers:
+            - name: upload
+              image: ghcr.io/oracle/oci-cli:latest
+              envFrom:
+                - configMapRef:
+                    name: db-backup-config
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  FILE=$(ls /dump/*.sql.gz | head -1)
+                  NAME=$(basename "$FILE")
+                  echo "Uploading $NAME to oci://$OCI_BUCKET ..."
+                  oci os object put --auth instance_principal \
+                    --namespace "$OCI_NAMESPACE" --bucket-name "$OCI_BUCKET" \
+                    --name "$NAME" --file "$FILE" --force
+                  echo "Backup uploaded: $NAME"
+              volumeMounts:
+                - name: dump
+                  mountPath: /dump
