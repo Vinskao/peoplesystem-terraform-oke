@@ -271,3 +271,157 @@ kubectl -n default patch deploy jenkins --type merge -p '{
 ```
 
 其他服務（如 Redis）使用 `claimName: shared-pvc-1` 並以 `subPath` 區隔，且需加 `nodeSelector: shared-pvc: "true"`。
+
+## 快速上傳角色圖片到 OKE 內部 Postgres
+
+本地開發時，常需把 `~/Pictures/images/characters/` 的圖片更新到叢集內供圖的位置。一個縮短指令 `push-people` 可一鍵完成完整流程。
+
+**供圖架構**：圖片由 `default/image-server`（nginx）pod 提供，掛 PVC `image-pvc` 到 `/images/people`，pod 跑在 node `10.0.159.167`。前端從 `https://peoplesystem.tatdvsonorth.com/images/people/<name>.png` 取圖。
+
+**`push-people` 做的事（完整三步）**：
+1. `scp` 本機第一層 png/mp4 → `oke-node:/tmp/`
+2. `ssh oke-node` → `kubectl cp /tmp/*` 進 `image-server` pod 的 `/images/people/`（**覆蓋同名檔、保留其餘**，非破壞性）
+3. `rm -f /tmp/*.png /tmp/*.mp4` 清乾淨 `/tmp`
+
+> **不要用 `rm -rf /images/*` 全清再上傳**（舊 Mac 腳本的做法）——那會刪掉 PVC 內所有圖（含 Fighting/Dancing 變體與影片）。除非你本機真的有「全套」檔案要完整取代，否則用覆蓋模式。
+>
+> 上傳後前端可能因瀏覽器/CDN 快取看不到新圖，需 hard refresh（Ctrl+Shift+R）。
+
+### 前提
+
+- `~/.ssh/config` 已定義 `oke-bastion` 與 `oke-node`（含 ProxyJump）：
+  ```
+  Host oke-bastion
+    HostName 140.245.61.250
+    User opc
+    IdentityFile ~/.ssh/id_ed25519
+  
+  Host oke-node
+    HostName 10.0.0.69
+    User opc
+    IdentityFile ~/.ssh/id_ed25519
+    ProxyJump oke-bastion
+  ```
+- Git Bash 已載入 `~/.bashrc`（含 `push-people` 函式）
+
+> **注意**：函式定義是 shell 專屬的。Bash 函式（`~/.bashrc`）在 PowerShell 跑不動，反之亦然。
+> 若你 Windows 上同時用 PowerShell 和 Git Bash，**兩邊都要各設一份**（見下）。
+
+### 設置（Git Bash / Zsh / Linux）
+
+加入 `~/.bashrc`（Git Bash）或 `~/.bash_profile` + `~/.bashrc`（Zsh/Linux）：
+
+```bash
+# 一鍵：上傳 png/mp4 → 搬進 image-server pod（覆蓋、保留其餘）→ 清 /tmp
+# 用法（任何路徑都可）： push-people
+# 需要 ~/.ssh/config 內已定義 oke-node（含 ProxyJump oke-bastion）
+push-people() {
+  local src="$HOME/Pictures/images/characters"
+  (
+    shopt -s nullglob
+    cd "$src" || { echo "找不到資料夾: $src"; return 1; }
+    local files=( *.png *.mp4 )
+    if (( ${#files[@]} == 0 )); then
+      echo "$src 裡沒有 png/mp4 可上傳"
+      return 1
+    fi
+    echo "[1/2] 上傳 ${#files[@]} 個檔案到 oke-node:/tmp/ ..."
+    scp "${files[@]}" oke-node:/tmp/ || { echo "scp 失敗"; return 1; }
+    echo "[2/2] 搬進 image-server pod（覆蓋、保留其餘）並清 /tmp ..."
+    ssh oke-node '
+POD=$(kubectl get pod -l app=image-server -o jsonpath="{.items[0].metadata.name}")
+n=0
+for f in /tmp/*.png /tmp/*.mp4; do
+  [ -f "$f" ] || continue
+  kubectl cp "$f" "$POD:/images/people/$(basename "$f")" >/dev/null 2>&1 && n=$((n+1))
+done
+echo "migrated $n files into $POD"
+rm -f /tmp/*.png /tmp/*.mp4
+echo "cleaned /tmp"
+'
+    echo "完成，硬重整頁面（Ctrl+Shift+R）即可看到新圖"
+  )
+}
+```
+
+Git Bash 若無 `~/.bash_profile`，需建立並 `. ~/.bashrc` 以便登入 shell 載入。
+
+### 設置（Windows PowerShell 5.1）
+
+加入 PowerShell profile（路徑：`$PROFILE`，通常是
+`C:\Users\<USER>\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1`）：
+
+```powershell
+function push-people {
+  $src = "$HOME\Pictures\images\characters"
+  if (-not (Test-Path $src)) {
+    Write-Host "[x] Directory not found: $src" -ForegroundColor Red
+    return
+  }
+  # 第一層 png/mp4（非遞迴）
+  $files = @(Get-ChildItem -Path $src -File | Where-Object { $_.Extension -eq '.png' -or $_.Extension -eq '.mp4' })
+  if ($files.Count -eq 0) {
+    Write-Host "[x] No png/mp4 files in $src" -ForegroundColor Red
+    return
+  }
+  # 1) 單次 scp 一連線傳全部到 /tmp
+  Write-Host "[1/2] Uploading $($files.Count) files to oke-node:/tmp/ ..." -ForegroundColor Cyan
+  $paths = $files | ForEach-Object { $_.FullName }
+  & scp $paths "oke-node:/tmp/"
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "[x] scp failed (code $LASTEXITCODE)" -ForegroundColor Red
+    return
+  }
+
+  # 2) 搬進 image-server pod（覆蓋、保留其餘）並清 /tmp
+  Write-Host "[2/2] Migrating into image-server pod and cleaning /tmp ..." -ForegroundColor Cyan
+  # 用單引號 here-string，避免 PowerShell 展開 $(...) 與 $f（讓遠端 shell 處理）
+  $remote = @'
+POD=$(kubectl get pod -l app=image-server -o jsonpath="{.items[0].metadata.name}")
+n=0
+for f in /tmp/*.png /tmp/*.mp4; do
+  [ -f "$f" ] || continue
+  kubectl cp "$f" "$POD:/images/people/$(basename "$f")" >/dev/null 2>&1 && n=$((n+1))
+done
+echo "migrated $n files into $POD"
+rm -f /tmp/*.png /tmp/*.mp4
+echo "cleaned /tmp"
+'@
+  & ssh oke-node $remote
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "[ok] Done. Hard-refresh (Ctrl+Shift+R) to see new images." -ForegroundColor Green
+  } else {
+    Write-Host "[!] remote step exited with code $LASTEXITCODE" -ForegroundColor Yellow
+  }
+}
+```
+
+> **效能雷**：不要用 `foreach` 逐檔呼叫 scp——那會為每個檔案開一次 SSH 連線（70 檔=70 次跳板握手，極慢且畫面像卡住）。改用**一次 scp 傳整個檔案陣列**（PowerShell 會把陣列展開成多個參數），只握手一次。Bash 版的 `scp "${files[@]}" ...` 本來就是單連線。
+
+改完在現有視窗執行 `. $PROFILE` 重新載入，或重開 PowerShell。
+
+#### PowerShell 5.1 踩過的雷（重要）
+
+1. **編碼**：Windows PowerShell 5.1 會把「無 BOM 的 UTF-8」當 ANSI 讀，
+   emoji（❌⬆️✅）和中文會變亂碼 → 字串沒收尾 → 整個函式解析失敗。
+   → profile 內**只用 ASCII**（訊息別放 emoji/中文），或存成 UTF-8 with BOM。
+2. **`-MaxDepth` 不存在**：是 PowerShell 6+ 才有；5.1 的 `Get-ChildItem` 沒這參數。
+3. **`-Include` 沒配 `-Recurse` 抓不到東西**。
+   → 改用 `Get-ChildItem -File | Where-Object { $_.Extension -eq '.png' ... }`。
+
+### 用法
+
+任何路徑（PowerShell 或 Git Bash）直接執行：
+```
+push-people
+```
+
+會把 `~/Pictures/images/characters/` 內的**第一層** `*.png` 和 `*.mp4`（不含子資料夾如 `characters_padded/`）上傳到 `oke-node:/tmp/`。
+
+之後在 OKE node 上可用 `kubectl cp` / Pod 掛載 `/tmp` 等方式遷移到 `/images/people`。
+
+### 實作細節
+
+- 只抓第一層 png/mp4，自動忽略子資料夾；scp 無 `-r`，不會誤傳遞迴目錄
+- Bash 版用 subshell + `cd`，不改變當前路徑
+- 依賴 `~/.ssh/config` 的 `oke-node` 定義，自動走 `ProxyJump oke-bastion` 跳板
