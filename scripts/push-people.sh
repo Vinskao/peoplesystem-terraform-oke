@@ -177,8 +177,39 @@ fi
 rm -f /tmp/*.png /tmp/*.mp4 /tmp/_mp4s.txt /tmp/pair-videos.json
 echo "cleaned /tmp"
 REMOTE
+    # [驗證] 從「前端實際會走的公開網址」把 manifest 抓回來驗一次。
+    # 光看上傳成功不夠 —— 之前就發生過檔案上去了但內容不是合法 JSON，
+    # 前端靜默退回 probe，於是三人組永遠讀不到卻沒人發現。
+    local url="https://peoplesystem.tatdvsonorth.com/images/people/pair-videos.json"
+    echo
+    echo "[驗證] $url"
+    local body
+    body=$(curl -fsS --max-time 20 "$url?t=$(date +%s)" 2>/dev/null || true)
+    # 必須逐字元比對開頭是不是 {"files":[ 。
+    # 用 grep 找 'files' 是不夠的：壞掉的 {files:[...] 也含有 files，會誤判成功。
+    local vq expect actual
+    vq=$(printf '\042')
+    expect="{${vq}files${vq}:["
+    actual=$(printf '%s' "$body" | head -c 10)
+
+    if [ -z "$body" ]; then
+      echo "  X 讀不到（404 或網路問題）—— 前端會退回 probe，三人組不會出現"
+    elif [ "$actual" != "$expect" ]; then
+      echo "  X 不是合法 JSON（前端會 JSON.parse 失敗並退回 probe）"
+      echo "     預期開頭: $expect"
+      echo "     實際開頭: $actual"
+    else
+      local total tri
+      total=$(printf '%s' "$body" | tr ',' '\n' | grep -c '\.mp4' || true)
+      tri=$(printf '%s' "$body" | tr ',' '\n' | grep -c '_.*_.*\.mp4' || true)
+      echo "  OK manifest 合法：$total 支影片，其中三人以上 $tri 支"
+      if [ "$tri" -eq 0 ]; then
+        echo "  ! 沒有任何三人以上的影片 —— 檢查檔名是否為 A_B_C.mp4 格式"
+      fi
+    fi
+
+    echo
     echo "完成，硬重整頁面（Ctrl+Shift+R）即可看到新圖"
-    echo "驗證 manifest: https://peoplesystem.tatdvsonorth.com/images/people/pair-videos.json"
     echo "然後到 palais group 頁按一次「建立影片快取」"
   )
 }

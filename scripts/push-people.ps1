@@ -224,11 +224,35 @@ echo "cleaned /tmp"
 
   # Pipe on stdin - see the note above. Never `& ssh oke-node $remote`.
   $remote | & ssh oke-node bash -s
-  if ($LASTEXITCODE -eq 0) {
-    Write-Host "[ok] Done. Hard-refresh (Ctrl+Shift+R) to see new images." -ForegroundColor Green
-    Write-Host "[i] Verify manifest: https://peoplesystem.tatdvsonorth.com/images/people/pair-videos.json" -ForegroundColor DarkGray
-    Write-Host "[i] Then click 'build video cache' once on the palais group page." -ForegroundColor DarkGray
-  } else {
+  if ($LASTEXITCODE -ne 0) {
     Write-Host "[!] remote step exited with code $LASTEXITCODE" -ForegroundColor Yellow
+    return
   }
+
+  # [verify] Fetch the manifest from the SAME public URL the frontend uses.
+  # A successful upload is not proof: previously the file landed but its content
+  # was not valid JSON, so the frontend silently fell back to probing and the
+  # 3-person videos never showed up. Verify the end state, not the step.
+  $url = "https://peoplesystem.tatdvsonorth.com/images/people/pair-videos.json"
+  Write-Host ""
+  Write-Host "[verify] $url" -ForegroundColor Cyan
+  try {
+    $stamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $resp = Invoke-WebRequest -Uri "$url`?t=$stamp" -UseBasicParsing -TimeoutSec 20
+    $json = $resp.Content | ConvertFrom-Json
+    $total = @($json.files).Count
+    $tri = @($json.files | Where-Object { ($_ -split '_').Count -ge 3 }).Count
+    Write-Host "  [ok] manifest valid: $total videos, $tri with 3+ people" -ForegroundColor Green
+    if ($tri -eq 0) {
+      Write-Host "  [!] no 3+ person videos found - check filenames look like A_B_C.mp4" -ForegroundColor Yellow
+    }
+  } catch {
+    Write-Host "  [x] manifest check FAILED: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "      The frontend will fall back to probing and 3-person videos" -ForegroundColor Red
+    Write-Host "      will NOT appear. Do not skip this." -ForegroundColor Red
+  }
+
+  Write-Host ""
+  Write-Host "[ok] Done. Hard-refresh (Ctrl+Shift+R), then click 'build video cache'" -ForegroundColor Green
+  Write-Host "     once on the palais group page." -ForegroundColor Green
 }
