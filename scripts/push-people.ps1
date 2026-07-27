@@ -42,8 +42,35 @@ function push-people {
     Write-Host "[0/3] faststart remux: $($mp4s.Count) mp4 (-c copy, no re-encode) ..." -ForegroundColor Cyan
     $converted = 0
     $reused = 0
-    foreach ($m in $mp4s) {
-      $out = Join-Path $work $m.Name
+    $renamed = 0
+    $skippedDup = 0
+    $failedRemux = @()
+    $taken = @{}
+
+    # Process already-correct names first so that when both A_B.mp4 and A__B.mp4
+    # exist, the properly-named one wins and the typo copy is dropped.
+    $ordered = @($mp4s | Where-Object { $_.Name -notmatch '__' }) +
+               @($mp4s | Where-Object { $_.Name -match '__' })
+
+    foreach ($m in $ordered) {
+      # Collapse accidental repeated underscores: A__B__C.mp4 -> A_B_C.mp4.
+      # The frontend splits on '_', so a doubled underscore yields empty members
+      # and the file is rejected. Fix it here instead of in every consumer.
+      $targetName = [regex]::Replace($m.Name, '_{2,}', '_')
+
+      if ($taken.ContainsKey($targetName)) {
+        Write-Host "    [-] duplicate after normalize, skipping: $($m.Name)" -ForegroundColor Yellow
+        $skippedDup++
+        continue
+      }
+      $taken[$targetName] = $true
+
+      if ($targetName -ne $m.Name) {
+        Write-Host "    [~] $($m.Name) -> $targetName" -ForegroundColor Yellow
+        $renamed++
+      }
+
+      $out = Join-Path $work $targetName
       # already processed and newer than the source -> reuse
       if ((Test-Path $out) -and ((Get-Item $out).LastWriteTime -gt $m.LastWriteTime)) {
         $uploads += $out
@@ -55,11 +82,52 @@ function push-people {
         $uploads += $out
         $converted++
       } else {
-        Write-Host "    [!] remux failed: $($m.Name) - uploading original" -ForegroundColor Yellow
+        Write-Host "    [!] remux failed: $($m.Name) - uploading original (still not faststart)" -ForegroundColor Yellow
+        $failedRemux += $m.Name
         $uploads += $m.FullName
       }
     }
-    Write-Host "      converted $converted, reused $reused" -ForegroundColor DarkGray
+    Write-Host "      converted $converted, reused $reused, renamed $renamed, skipped-dup $skippedDup" -ForegroundColor DarkGray
+
+    # Verify the outputs really are faststart: moov must appear before mdat.
+    # Trusting ffmpeg's exit code is not enough - some files came out fine
+    # according to the exit code yet still had moov at the tail, and the
+    # fallback-to-original path only printed one line that was easy to miss.
+    $notFastStart = @()
+    foreach ($u in $uploads) {
+      if (-not $u.EndsWith('.mp4')) { continue }
+      try {
+        $fs = [System.IO.File]::OpenRead($u)
+        $buf = New-Object byte[] 2048
+        $read = $fs.Read($buf, 0, 2048)
+        $fs.Close()
+        $text = [System.Text.Encoding]::ASCII.GetString($buf, 0, $read)
+        $iMoov = $text.IndexOf('moov')
+        $iMdat = $text.IndexOf('mdat')
+        if ($iMdat -ge 0 -and ($iMoov -lt 0 -or $iMdat -lt $iMoov)) {
+          $notFastStart += [System.IO.Path]::GetFileName($u)
+        }
+      } catch { }
+    }
+
+    if ($notFastStart.Count -gt 0 -or $failedRemux.Count -gt 0) {
+      Write-Host ""
+      Write-Host "  ================ WARNING ================" -ForegroundColor Yellow
+      if ($notFastStart.Count -gt 0) {
+        Write-Host "  $($notFastStart.Count) file(s) still NOT faststart (hover will stall):" -ForegroundColor Yellow
+        foreach ($f in $notFastStart) { Write-Host "    - $f" -ForegroundColor Yellow }
+        Write-Host "  Try a real re-encode: ffmpeg -i in.mp4 -movflags +faststart out.mp4" -ForegroundColor DarkGray
+      }
+      if ($failedRemux.Count -gt 0) {
+        Write-Host "  $($failedRemux.Count) file(s) ffmpeg could not read (likely corrupt):" -ForegroundColor Yellow
+        foreach ($f in $failedRemux) { Write-Host "    - $f" -ForegroundColor Yellow }
+        Write-Host "  Inspect with: ffprobe <file>" -ForegroundColor DarkGray
+      }
+      Write-Host "  =========================================" -ForegroundColor Yellow
+      Write-Host ""
+    } else {
+      Write-Host "      verified: moov is at the head for every mp4" -ForegroundColor DarkGray
+    }
   }
 
   # 1) single scp call = single SSH handshake (per-file scp would re-handshake every time)
@@ -96,34 +164,56 @@ echo "migrated $n files into $POD"
 # manifest: the frontend "build video cache" reads this in ONE request instead of
 # brute-forcing thousands of HEAD probes. It is also the only way 3+ person
 # videos (A_B_C.mp4) can ever be discovered - probing those is O(N^3).
+# Remove leftover double-underscore typos that are now redundant.
+# Only deletes A__B.mp4 when the collapsed A_B.mp4 also exists, so the content
+# is provably still present - never deletes anything unique.
+kubectl exec "$POD" -- sh -c 'cd /images/people 2>/dev/null || exit 0
+for f in *__*.mp4; do
+  [ -e "$f" ] || continue
+  g=$(printf "%s" "$f" | sed "s/__*/_/g")
+  if [ "$g" != "$f" ] && [ -e "$g" ]; then
+    rm -f "$f" && echo "removed redundant $f (kept $g)"
+  fi
+done'
+
 # Only combo videos matter: the frontend needs A_B.mp4 / A_B_C.mp4. Solo clips
 # (Wavo.mp4, Draeny2.mp4 ...) have no underscore and are ignored anyway, so
 # filtering them here keeps the manifest small and skips oddly-encoded names.
 kubectl exec "$POD" -- ls -1 /images/people 2>/dev/null \
   | grep '\.mp4$' | grep '_' > /tmp/_mp4s.txt
 v=$(wc -l < /tmp/_mp4s.txt | tr -d ' ')
+
+# This block deliberately contains NO double-quote character anywhere.
+# PowerShell 5.1 strips double quotes when handing arguments to a native exe,
+# which silently turned printf {"files":[ into printf {files:[ and produced
+# invalid JSON that nobody noticed. The quote is generated at runtime via \042,
+# so no transport can break it again.
+Q=$(printf '\042')
 {
-  printf '{"files":['
+  printf '{'
+  printf '%sfiles%s:[' "$Q" "$Q"
   first=1
   while IFS= read -r line; do
     if [ "$first" -eq 1 ]; then first=0; else printf ','; fi
-    printf '"%s"' "$line"
+    printf '%s%s%s' "$Q" "$line" "$Q"
   done < /tmp/_mp4s.txt
-  printf ']}\n'
+  printf ']}'
+  printf '\n'
 } > /tmp/pair-videos.json
 
-# Guard: if quoting got mangled in transit the file is not valid JSON and the
-# frontend would silently fall back to probing. Fail loudly instead.
-if ! grep -q '"files"' /tmp/pair-videos.json; then
-  echo "ERROR: manifest is malformed (quotes were stripped) - not uploading"
-  head -c 200 /tmp/pair-videos.json
-  echo
+expected_head=$(printf '{%sfiles%s:[' "$Q" "$Q")
+actual_head=$(head -c 10 /tmp/pair-videos.json)
+if [ "$actual_head" != "$expected_head" ]; then
+  echo "ERROR: manifest is malformed - not uploading"
+  echo "  expected: $expected_head"
+  echo "  actual  : $actual_head"
   rm -f /tmp/*.png /tmp/*.mp4 /tmp/_mp4s.txt /tmp/pair-videos.json
   exit 1
 fi
 
 if kubectl cp /tmp/pair-videos.json "$POD:/images/people/pair-videos.json" >/dev/null 2>&1; then
   echo "manifest written: $v combo videos"
+  echo "  3+ person entries: $(grep -c '_.*_' /tmp/_mp4s.txt || true)"
 else
   echo "WARN: manifest upload failed"
 fi
