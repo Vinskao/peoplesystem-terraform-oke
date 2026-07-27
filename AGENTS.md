@@ -278,10 +278,39 @@ kubectl -n default patch deploy jenkins --type merge -p '{
 
 **供圖架構**：圖片由 `default/image-server`（nginx）pod 提供，掛 PVC `image-pvc` 到 `/images/people`，pod 跑在 node `10.0.159.167`。前端從 `https://peoplesystem.tatdvsonorth.com/images/people/<name>.png` 取圖。
 
-**`push-people` 做的事（完整三步）**：
-1. `scp` 本機第一層 png/mp4 → `oke-node:/tmp/`
+**`push-people` 做的事（完整四步）**：
+0. **faststart 預處理**：所有 mp4 先用 `ffmpeg -c copy -movflags +faststart` 重新封裝到 `.faststart/`（不重新編碼），上傳的是處理後的版本
+1. `scp` 本機第一層 png + 處理後的 mp4 → `oke-node:/tmp/`
 2. `ssh oke-node` → `kubectl cp /tmp/*` 進 `image-server` pod 的 `/images/people/`（**覆蓋同名檔、保留其餘**，非破壞性）
-3. `rm -f /tmp/*.png /tmp/*.mp4` 清乾淨 `/tmp`
+3. 在 pod 內列出所有 `*.mp4`，產生 **`pair-videos.json`** 影片清單，一併放進 `/images/people/`
+4. `rm -f /tmp/*` 清乾淨 `/tmp`
+
+### 為什麼要 faststart（第 0 步）
+
+MP4 的 `moov` atom（索引）若被寫在檔尾，瀏覽器**必須把整支影片下載完**才能播出第一格。
+palais group 頁是 hover 即播，這會直接表現成「滑過去卡住好幾秒」，而且是前端無論怎麼預載都救不回來的。
+
+`-movflags +faststart` 把 `moov` 搬到檔頭，**搭配 `-c copy` 不會重新編碼**，畫質無損、速度接近純複製。
+
+> 前端有內建偵測：palais group 頁按「建立影片快取」時會抽樣檢查，發現非 faststart 會跳警告並在 console 列出檔名。
+> 正常流程下不該再看到這個警告 —— 看到就代表有影片不是走 `push-people` 上去的。
+
+### 為什麼要產生 pair-videos.json（第 3 步）
+
+前端 hover 互動影片靠 `A_B.mp4` / `A_B_C.mp4` 這種檔名對應，但 **nginx 沒開目錄列表**，
+所以前端只能猜檔名逐一發 HEAD 探測 —— N 個角色要 N(N-1) 次請求（N=50 約 2450 次），慢到不可用；
+三人組更是 O(N³)（約 12 萬次），根本不可行。
+
+`pair-videos.json` 就是那份缺席的目錄列表。有了它，前端「建立影片快取」變成**一次 GET**，
+成本與角色數、幾人一組完全無關 —— 三人以上的組合也只有這條路走得通。
+
+格式（前端也吃 `{"groups":[["A","B"]]}` 或裸陣列）：
+
+```json
+{"files":["Medicis_Kyu.mp4","Sorane_Kristae.mp4","Natsumi_Wavo_Kazuko.mp4"]}
+```
+
+> 影片檔名的**第一個名字就是擁有者**，只有他 hover 時會播；第一個底線之後的成員只是內容的一部分。
 
 > **不要用 `rm -rf /images/*` 全清再上傳**（舊 Mac 腳本的做法）——那會刪掉 PVC 內所有圖（含 Fighting/Dancing 變體與影片）。除非你本機真的有「全套」檔案要完整取代，否則用覆蓋模式。
 >
@@ -312,23 +341,59 @@ kubectl -n default patch deploy jenkins --type merge -p '{
 加入 `~/.bashrc`（Git Bash）或 `~/.bash_profile` + `~/.bashrc`（Zsh/Linux）：
 
 ```bash
-# 一鍵：上傳 png/mp4 → 搬進 image-server pod（覆蓋、保留其餘）→ 清 /tmp
+# 一鍵：mp4 轉 faststart → 上傳 → 搬進 image-server pod（覆蓋、保留其餘）
+#       → 產生 pair-videos.json 影片清單 → 清 /tmp
 # 用法（任何路徑都可）： push-people
-# 需要 ~/.ssh/config 內已定義 oke-node（含 ProxyJump oke-bastion）
+# 需要：~/.ssh/config 內已定義 oke-node（含 ProxyJump oke-bastion）、本機有 ffmpeg
 push-people() {
   local src="$HOME/Pictures/images/characters"
+  local work="$src/.faststart"
   (
     shopt -s nullglob
     cd "$src" || { echo "找不到資料夾: $src"; return 1; }
-    local files=( *.png *.mp4 )
-    if (( ${#files[@]} == 0 )); then
+
+    local pngs=( *.png )
+    local mp4s=( *.mp4 )
+    if (( ${#pngs[@]} + ${#mp4s[@]} == 0 )); then
       echo "$src 裡沒有 png/mp4 可上傳"
       return 1
     fi
-    echo "[1/2] 上傳 ${#files[@]} 個檔案到 oke-node:/tmp/ ..."
-    scp "${files[@]}" oke-node:/tmp/ || { echo "scp 失敗"; return 1; }
-    echo "[2/2] 搬進 image-server pod（覆蓋、保留其餘）並清 /tmp ..."
-    ssh oke-node '
+
+    # [0/3] mp4 一律轉成 faststart（moov 移到檔頭）。
+    # 沒做這步的話，前端 hover 必須把整支下載完才能播第一格。
+    # -c copy 不重新編碼，畫質無損、速度接近純複製。
+    local uploads=( "${pngs[@]}" )
+    if (( ${#mp4s[@]} > 0 )); then
+      if ! command -v ffmpeg >/dev/null 2>&1; then
+        echo "找不到 ffmpeg，無法處理 faststart。請先安裝 ffmpeg 再執行。"
+        return 1
+      fi
+      mkdir -p "$work"
+      echo "[0/3] faststart 處理 ${#mp4s[@]} 個 mp4（-c copy，不重新編碼）..."
+      local n=0 skipped=0 f out
+      for f in "${mp4s[@]}"; do
+        out="$work/$f"
+        # 已處理過且比原檔新 → 沿用，不重跑
+        if [ -f "$out" ] && [ "$out" -nt "$f" ]; then
+          uploads+=( "$out" ); skipped=$((skipped+1)); continue
+        fi
+        if ffmpeg -y -v error -i "$f" -c copy -movflags +faststart "$out" </dev/null; then
+          uploads+=( "$out" ); n=$((n+1))
+        else
+          echo "  ! $f 轉檔失敗，改上傳原檔"
+          uploads+=( "$f" )
+        fi
+      done
+      echo "      轉換 $n 個，沿用快取 $skipped 個"
+    fi
+
+    echo "[1/3] 上傳 ${#uploads[@]} 個檔案到 oke-node:/tmp/ ..."
+    scp "${uploads[@]}" oke-node:/tmp/ || { echo "scp 失敗"; return 1; }
+
+    echo "[2/3] 搬進 image-server pod（覆蓋、保留其餘）..."
+    echo "[3/3] 產生 pair-videos.json 影片清單並清 /tmp ..."
+    # 用 quoted heredoc 餵 stdin，遠端腳本內可自由使用單/雙引號，本機不做任何展開
+    ssh oke-node bash -s <<'REMOTE'
 POD=$(kubectl get pod -l app=image-server -o jsonpath="{.items[0].metadata.name}")
 n=0
 for f in /tmp/*.png /tmp/*.mp4; do
@@ -336,10 +401,30 @@ for f in /tmp/*.png /tmp/*.mp4; do
   kubectl cp "$f" "$POD:/images/people/$(basename "$f")" >/dev/null 2>&1 && n=$((n+1))
 done
 echo "migrated $n files into $POD"
-rm -f /tmp/*.png /tmp/*.mp4
+
+# 影片清單 manifest：前端「建立影片快取」靠它一次 GET 取代數千次 HEAD 探測
+kubectl exec "$POD" -- ls -1 /images/people 2>/dev/null | grep '\.mp4$' > /tmp/_mp4s.txt
+v=$(wc -l < /tmp/_mp4s.txt | tr -d ' ')
+{
+  printf '{"files":['
+  first=1
+  while IFS= read -r line; do
+    if [ "$first" -eq 1 ]; then first=0; else printf ','; fi
+    printf '"%s"' "$line"
+  done < /tmp/_mp4s.txt
+  printf ']}\n'
+} > /tmp/pair-videos.json
+if kubectl cp /tmp/pair-videos.json "$POD:/images/people/pair-videos.json" >/dev/null 2>&1; then
+  echo "manifest written: $v videos"
+else
+  echo "warn: manifest upload failed"
+fi
+
+rm -f /tmp/*.png /tmp/*.mp4 /tmp/_mp4s.txt /tmp/pair-videos.json
 echo "cleaned /tmp"
-'
+REMOTE
     echo "完成，硬重整頁面（Ctrl+Shift+R）即可看到新圖"
+    echo "影片有異動的話，到 palais group 頁按一次「建立影片快取」讓前端讀新的 manifest"
   )
 }
 ```
@@ -353,29 +438,69 @@ Git Bash 若無 `~/.bash_profile`，需建立並 `. ~/.bashrc` 以便登入 shel
 
 ```powershell
 function push-people {
-  $src = "$HOME\Pictures\images\characters"
+  $src  = "$HOME\Pictures\images\characters"
+  $work = Join-Path $src ".faststart"
   if (-not (Test-Path $src)) {
     Write-Host "[x] Directory not found: $src" -ForegroundColor Red
     return
   }
-  # 第一層 png/mp4（非遞迴）
+  # first level png/mp4 only (non-recursive)
   $files = @(Get-ChildItem -Path $src -File | Where-Object { $_.Extension -eq '.png' -or $_.Extension -eq '.mp4' })
   if ($files.Count -eq 0) {
     Write-Host "[x] No png/mp4 files in $src" -ForegroundColor Red
     return
   }
-  # 1) 單次 scp 一連線傳全部到 /tmp
-  Write-Host "[1/2] Uploading $($files.Count) files to oke-node:/tmp/ ..." -ForegroundColor Cyan
-  $paths = $files | ForEach-Object { $_.FullName }
-  & scp $paths "oke-node:/tmp/"
+
+  $pngs = @($files | Where-Object { $_.Extension -eq '.png' })
+  $mp4s = @($files | Where-Object { $_.Extension -eq '.mp4' })
+  $uploads = @($pngs | ForEach-Object { $_.FullName })
+
+  # 0) Remux every mp4 with faststart (moov atom moved to the head).
+  #    Without it the browser must download the whole clip before the first
+  #    frame can play, which makes hover-to-play stall for seconds.
+  #    -c copy means no re-encode: lossless and nearly as fast as a file copy.
+  if ($mp4s.Count -gt 0) {
+    if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+      Write-Host "[x] ffmpeg not found. Install ffmpeg first." -ForegroundColor Red
+      return
+    }
+    if (-not (Test-Path $work)) { New-Item -ItemType Directory -Path $work | Out-Null }
+    Write-Host "[0/3] faststart remux: $($mp4s.Count) mp4 (-c copy, no re-encode) ..." -ForegroundColor Cyan
+    $converted = 0
+    $reused = 0
+    foreach ($m in $mp4s) {
+      $out = Join-Path $work $m.Name
+      # already processed and newer than the source -> reuse
+      if ((Test-Path $out) -and ((Get-Item $out).LastWriteTime -gt $m.LastWriteTime)) {
+        $uploads += $out
+        $reused++
+        continue
+      }
+      & ffmpeg -y -v error -i $m.FullName -c copy -movflags +faststart $out
+      if ($LASTEXITCODE -eq 0) {
+        $uploads += $out
+        $converted++
+      } else {
+        Write-Host "    [!] remux failed: $($m.Name) - uploading original" -ForegroundColor Yellow
+        $uploads += $m.FullName
+      }
+    }
+    Write-Host "      converted $converted, reused $reused" -ForegroundColor DarkGray
+  }
+
+  # 1) single scp call = single SSH handshake
+  Write-Host "[1/3] Uploading $($uploads.Count) files to oke-node:/tmp/ ..." -ForegroundColor Cyan
+  & scp $uploads "oke-node:/tmp/"
   if ($LASTEXITCODE -ne 0) {
     Write-Host "[x] scp failed (code $LASTEXITCODE)" -ForegroundColor Red
     return
   }
 
-  # 2) 搬進 image-server pod（覆蓋、保留其餘）並清 /tmp
-  Write-Host "[2/2] Migrating into image-server pod and cleaning /tmp ..." -ForegroundColor Cyan
-  # 用單引號 here-string，避免 PowerShell 展開 $(...) 與 $f（讓遠端 shell 處理）
+  # 2) migrate into the image-server pod (overwrite, keep the rest)
+  # 3) build pair-videos.json manifest, then clean /tmp
+  Write-Host "[2/3] Migrating into image-server pod ..." -ForegroundColor Cyan
+  Write-Host "[3/3] Writing pair-videos.json manifest and cleaning /tmp ..." -ForegroundColor Cyan
+  # single-quoted here-string: PowerShell must NOT expand $(...) or $f - the remote shell handles them
   $remote = @'
 POD=$(kubectl get pod -l app=image-server -o jsonpath="{.items[0].metadata.name}")
 n=0
@@ -384,12 +509,31 @@ for f in /tmp/*.png /tmp/*.mp4; do
   kubectl cp "$f" "$POD:/images/people/$(basename "$f")" >/dev/null 2>&1 && n=$((n+1))
 done
 echo "migrated $n files into $POD"
-rm -f /tmp/*.png /tmp/*.mp4
+
+kubectl exec "$POD" -- ls -1 /images/people 2>/dev/null | grep '\.mp4$' > /tmp/_mp4s.txt
+v=$(wc -l < /tmp/_mp4s.txt | tr -d ' ')
+{
+  printf '{"files":['
+  first=1
+  while IFS= read -r line; do
+    if [ "$first" -eq 1 ]; then first=0; else printf ','; fi
+    printf '"%s"' "$line"
+  done < /tmp/_mp4s.txt
+  printf ']}\n'
+} > /tmp/pair-videos.json
+if kubectl cp /tmp/pair-videos.json "$POD:/images/people/pair-videos.json" >/dev/null 2>&1; then
+  echo "manifest written: $v videos"
+else
+  echo "warn: manifest upload failed"
+fi
+
+rm -f /tmp/*.png /tmp/*.mp4 /tmp/_mp4s.txt /tmp/pair-videos.json
 echo "cleaned /tmp"
 '@
   & ssh oke-node $remote
   if ($LASTEXITCODE -eq 0) {
     Write-Host "[ok] Done. Hard-refresh (Ctrl+Shift+R) to see new images." -ForegroundColor Green
+    Write-Host "[i] If videos changed, click 'build video cache' once on the palais group page." -ForegroundColor DarkGray
   } else {
     Write-Host "[!] remote step exited with code $LASTEXITCODE" -ForegroundColor Yellow
   }
@@ -416,12 +560,29 @@ echo "cleaned /tmp"
 push-people
 ```
 
-會把 `~/Pictures/images/characters/` 內的**第一層** `*.png` 和 `*.mp4`（不含子資料夾如 `characters_padded/`）上傳到 `oke-node:/tmp/`。
-
-之後在 OKE node 上可用 `kubectl cp` / Pod 掛載 `/tmp` 等方式遷移到 `/images/people`。
+會把 `~/Pictures/images/characters/` 內的**第一層** `*.png` 和 `*.mp4`（不含子資料夾如 `characters_padded/`）
+處理後上傳並直接搬進 `/images/people`，最後產生 `pair-videos.json`。
 
 ### 實作細節
 
-- 只抓第一層 png/mp4，自動忽略子資料夾；scp 無 `-r`，不會誤傳遞迴目錄
+- 只抓第一層 png/mp4，自動忽略子資料夾（含新增的 `.faststart/`）；scp 無 `-r`，不會誤傳遞迴目錄
+- **faststart 產物放在 `$src/.faststart/`，不覆蓋原檔** —— 原始素材永遠保持原樣
+- 增量處理：`.faststart/X.mp4` 比 `X.mp4` 新就直接沿用，不重跑 ffmpeg。改過的檔案才會重新封裝
+- 轉檔失敗時**退回上傳原檔**，不會因為單一壞檔中斷整批
+- Bash 版遠端腳本改用 `ssh oke-node bash -s <<'REMOTE'` 餵 stdin。
+  舊寫法 `ssh oke-node '...'` 把整段包在單引號裡，遠端腳本內就不能再出現單引號，
+  而 manifest 那段的 `printf '{"files":['` 一定要用單引號 → 必須改成 quoted heredoc
+- `pair-videos.json` 是從 **pod 內實際的 `ls`** 產生的，不是從本機檔案列表 ——
+  所以它反映 PVC 的真實內容（含歷史上傳、非本次帶上去的影片）
 - Bash 版用 subshell + `cd`，不改變當前路徑
 - 依賴 `~/.ssh/config` 的 `oke-node` 定義，自動走 `ProxyJump oke-bastion` 跳板
+
+### 疑難排解
+
+| 症狀 | 原因 / 處理 |
+|---|---|
+| `找不到 ffmpeg` | 安裝 ffmpeg 並確認在 PATH。Windows 可用 `winget install Gyan.FFmpeg` |
+| 前端仍警告非 faststart | 該影片不是走 `push-people` 上去的。把它放進 `~/Pictures/images/characters/` 重跑一次 |
+| 前端 hover 沒影片 | 快取沒建或已過期 —— 到 palais group 頁按「建立影片快取」。有 manifest 的話這是一次 GET，很快 |
+| `manifest upload failed` | pod 內 `/images/people` 可能唯讀，或 `kubectl exec` 權限不足。檢查 `kubectl describe pod` |
+| 改了影片但前端還是舊的 | CDN/瀏覽器快取。hard refresh，或在 group 頁按「刷新圖片」換時間戳 |
