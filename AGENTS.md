@@ -316,6 +316,33 @@ palais group 頁是 hover 即播，這會直接表現成「滑過去卡住好幾
 >
 > 上傳後前端可能因瀏覽器/CDN 快取看不到新圖，需 hard refresh（Ctrl+Shift+R）。
 
+### 安裝（一次就好）
+
+函式的實作放在 repo 裡（`scripts/push-people.ps1` / `scripts/push-people.sh`），
+安裝器只往 profile 加**一行 dot-source**。所以之後改 repo 裡的腳本會直接生效，
+不用再回頭改 profile —— 這正是先前「改了文件卻沒生效」的原因。
+
+**PowerShell**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "F:\002-workspace\ty-multiverse\peoplesystem-terraform-oke\scripts\install-push-people.ps1"
+```
+
+**Git Bash**
+
+```bash
+bash "/f/002-workspace/ty-multiverse/peoplesystem-terraform-oke/scripts/install-push-people.sh"
+source ~/.bashrc
+```
+
+安裝器會：建立不存在的 profile／`~/.bash_profile`、檢查 ffmpeg 是否在 PATH、
+把函式載進當前 session（PowerShell 版不用重開視窗）。可重複執行，不會重複寫入。
+
+裝完直接跑 `push-people`。
+
+> 底下「設置」兩節是函式的完整內容，供參考與手動安裝；
+> **正式來源是 `scripts/` 裡的檔案**，兩邊有出入時以 `scripts/` 為準。
+
 ### 前提
 
 - `~/.ssh/config` 已定義 `oke-bastion` 與 `oke-node`（含 ProxyJump）：
