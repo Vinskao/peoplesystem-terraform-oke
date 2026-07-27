@@ -326,19 +326,35 @@ palais group 頁是 hover 即播，這會直接表現成「滑過去卡住好幾
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File "F:\002-workspace\ty-multiverse\peoplesystem-terraform-oke\scripts\install-push-people.ps1"
+. $PROFILE
+push-people
 ```
+
+> ⚠ **`. $PROFILE` 這行不能省。**
+> `powershell -File ...` 會開一個**子行程**，它定義的函式到不了你現在這個視窗 ——
+> 你的視窗仍然是開機時載入的舊版本。不重載的話會看到舊版跑起來（沒有 faststart、
+> 沒有 manifest），然後 `pair-videos.json` 依然 404。
+>
+> **怎麼確認載到新版**：新版第一行印 `[0/3] faststart remux ...`。
+> 如果看到 `[1/2] Uploading`，那是舊版，profile 沒重載。
 
 **Git Bash**
 
 ```bash
 bash "/f/002-workspace/ty-multiverse/peoplesystem-terraform-oke/scripts/install-push-people.sh"
 source ~/.bashrc
+push-people
 ```
 
-安裝器會：建立不存在的 profile／`~/.bash_profile`、檢查 ffmpeg 是否在 PATH、
-把函式載進當前 session（PowerShell 版不用重開視窗）。可重複執行，不會重複寫入。
+安裝器會做的事：
 
-裝完直接跑 `push-people`。
+- 先備份 profile（`.bak-<時間戳>`）
+- **把 profile 裡舊的 inline `function push-people` 註解掉**（用括號配對找出整個函式範圍）。
+  同一個檔案裡有兩份定義是陷阱 —— 後載入的那份會無聲勝出，很難察覺
+- 把 dot-source 那行移到檔案**最後**，確保 repo 版本永遠最後載入
+- 建立不存在的 profile／`~/.bash_profile`，並檢查 ffmpeg 在不在 PATH
+
+可重複執行，不會重複寫入。
 
 > 底下「設置」兩節是函式的完整內容，供參考與手動安裝；
 > **正式來源是 `scripts/` 裡的檔案**，兩邊有出入時以 `scripts/` 為準。

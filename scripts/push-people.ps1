@@ -75,7 +75,12 @@ function push-people {
   Write-Host "[2/3] Migrating into image-server pod ..." -ForegroundColor Cyan
   Write-Host "[3/3] Writing pair-videos.json manifest and cleaning /tmp ..." -ForegroundColor Cyan
 
-  # single-quoted here-string: PowerShell must NOT expand $(...) or $f - the remote shell handles them
+  # single-quoted here-string: PowerShell must NOT expand $(...) or $f - the remote shell handles them.
+  #
+  # This is piped to ssh via STDIN, never passed as an argument. PowerShell 5.1
+  # mangles double quotes when handing arguments to a native exe, which silently
+  # turned printf '{"files":[' into printf '{files:[' and produced invalid JSON.
+  # Feeding the script on stdin keeps every character intact.
   $remote = @'
 set -u
 POD=$(kubectl get pod -l app=image-server -o jsonpath="{.items[0].metadata.name}")
@@ -91,7 +96,11 @@ echo "migrated $n files into $POD"
 # manifest: the frontend "build video cache" reads this in ONE request instead of
 # brute-forcing thousands of HEAD probes. It is also the only way 3+ person
 # videos (A_B_C.mp4) can ever be discovered - probing those is O(N^3).
-kubectl exec "$POD" -- ls -1 /images/people 2>/dev/null | grep '\.mp4$' > /tmp/_mp4s.txt
+# Only combo videos matter: the frontend needs A_B.mp4 / A_B_C.mp4. Solo clips
+# (Wavo.mp4, Draeny2.mp4 ...) have no underscore and are ignored anyway, so
+# filtering them here keeps the manifest small and skips oddly-encoded names.
+kubectl exec "$POD" -- ls -1 /images/people 2>/dev/null \
+  | grep '\.mp4$' | grep '_' > /tmp/_mp4s.txt
 v=$(wc -l < /tmp/_mp4s.txt | tr -d ' ')
 {
   printf '{"files":['
@@ -103,8 +112,18 @@ v=$(wc -l < /tmp/_mp4s.txt | tr -d ' ')
   printf ']}\n'
 } > /tmp/pair-videos.json
 
+# Guard: if quoting got mangled in transit the file is not valid JSON and the
+# frontend would silently fall back to probing. Fail loudly instead.
+if ! grep -q '"files"' /tmp/pair-videos.json; then
+  echo "ERROR: manifest is malformed (quotes were stripped) - not uploading"
+  head -c 200 /tmp/pair-videos.json
+  echo
+  rm -f /tmp/*.png /tmp/*.mp4 /tmp/_mp4s.txt /tmp/pair-videos.json
+  exit 1
+fi
+
 if kubectl cp /tmp/pair-videos.json "$POD:/images/people/pair-videos.json" >/dev/null 2>&1; then
-  echo "manifest written: $v videos"
+  echo "manifest written: $v combo videos"
 else
   echo "WARN: manifest upload failed"
 fi
@@ -113,7 +132,8 @@ rm -f /tmp/*.png /tmp/*.mp4 /tmp/_mp4s.txt /tmp/pair-videos.json
 echo "cleaned /tmp"
 '@
 
-  & ssh oke-node $remote
+  # Pipe on stdin - see the note above. Never `& ssh oke-node $remote`.
+  $remote | & ssh oke-node bash -s
   if ($LASTEXITCODE -eq 0) {
     Write-Host "[ok] Done. Hard-refresh (Ctrl+Shift+R) to see new images." -ForegroundColor Green
     Write-Host "[i] Verify manifest: https://peoplesystem.tatdvsonorth.com/images/people/pair-videos.json" -ForegroundColor DarkGray

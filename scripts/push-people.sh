@@ -67,7 +67,11 @@ echo "migrated $n files into $POD"
 
 # 影片清單 manifest：前端「建立影片快取」靠它一次 GET 取代數千次 HEAD 探測，
 # 也是三人以上影片（A_B_C.mp4）唯一能被發現的途徑 —— 用猜的是 O(N^3)。
-kubectl exec "$POD" -- ls -1 /images/people 2>/dev/null | grep '\.mp4$' > /tmp/_mp4s.txt
+# 只有組合影片有意義：前端要的是 A_B.mp4 / A_B_C.mp4。
+# 單人影片（Wavo.mp4、Draeny2.mp4…）沒有底線，前端本來就會略過，
+# 在這裡先濾掉可以縮小清單，也順便跳過編碼壞掉的檔名。
+kubectl exec "$POD" -- ls -1 /images/people 2>/dev/null \
+  | grep '\.mp4$' | grep '_' > /tmp/_mp4s.txt
 v=$(wc -l < /tmp/_mp4s.txt | tr -d ' ')
 {
   printf '{"files":['
@@ -79,8 +83,18 @@ v=$(wc -l < /tmp/_mp4s.txt | tr -d ' ')
   printf ']}\n'
 } > /tmp/pair-videos.json
 
+# 護欄：引號如果在傳輸途中被吃掉，產出就不是合法 JSON，
+# 前端會靜默退回 probe 模式。寧可在這裡大聲失敗。
+if ! grep -q '"files"' /tmp/pair-videos.json; then
+  echo "ERROR: manifest 格式錯誤（引號被吃掉），不上傳"
+  head -c 200 /tmp/pair-videos.json
+  echo
+  rm -f /tmp/*.png /tmp/*.mp4 /tmp/_mp4s.txt /tmp/pair-videos.json
+  exit 1
+fi
+
 if kubectl cp /tmp/pair-videos.json "$POD:/images/people/pair-videos.json" >/dev/null 2>&1; then
-  echo "manifest written: $v videos"
+  echo "manifest written: $v combo videos"
 else
   echo "WARN: manifest upload failed"
 fi
