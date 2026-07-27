@@ -7,7 +7,21 @@
 # Keep this file ASCII-only. Windows PowerShell 5.1 reads BOM-less UTF-8 as ANSI,
 # so non-ASCII characters corrupt the string literals and break parsing.
 
+# Bump this whenever the script changes. It is printed on every run so that a
+# pasted log immediately shows which version produced it - the profile only
+# re-reads this file when it loads, so a stale session is easy to miss.
+$script:PushPeopleVersion = '2026.07.28-4'
+
+# Re-reads this file into the current session. Use after the repo copy changes,
+# instead of remembering `. $PROFILE` (which also re-runs everything else).
+function push-people-reload {
+  . "$PSCommandPath"
+  Write-Host "reloaded push-people v$script:PushPeopleVersion" -ForegroundColor Green
+}
+
 function push-people {
+  Write-Host "push-people v$script:PushPeopleVersion" -ForegroundColor DarkGray
+
   $src  = "$HOME\Pictures\images\characters"
   $work = Join-Path $src ".faststart"
 

@@ -330,6 +330,18 @@ powershell -ExecutionPolicy Bypass -File "F:\002-workspace\ty-multiverse\peoples
 push-people
 ```
 
+> ⚠ **腳本更新後要重新載入，否則會跑到舊版。**
+> profile 只在**載入當下**讀 `scripts/push-people.ps1`。之後 repo 檔案改了，
+> 已開著的視窗仍然是舊的函式 —— 這很難察覺，症狀是「明明改好了卻還是舊行為」。
+>
+> 每次執行都會先印版本號（例如 `push-people v2026.07.28-4`），
+> **貼 log 前先確認版本號是最新的**。不是的話：
+>
+> ```powershell
+> push-people-reload    # 只重載這個腳本
+> # 或 . $PROFILE       # 重載整個 profile
+> ```
+
 > ⚠ **`. $PROFILE` 這行不能省。**
 > `powershell -File ...` 會開一個**子行程**，它定義的函式到不了你現在這個視窗 ——
 > 你的視窗仍然是開機時載入的舊版本。不重載的話會看到舊版跑起來（沒有 faststart、

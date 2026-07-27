@@ -4,7 +4,13 @@
 #   source "/f/002-workspace/ty-multiverse/peoplesystem-terraform-oke/scripts/push-people.sh"
 # Run scripts/install-push-people.sh once to add that line automatically.
 
+# 每次改動就更新版本號。它會在每次執行時印出來，
+# 貼 log 給人看時一眼就知道跑的是哪一版 —— profile 只在載入時讀這個檔，
+# session 停在舊版是很容易忽略的陷阱。
+PUSH_PEOPLE_VERSION='2026.07.28-4'
+
 push-people() {
+  echo "push-people v$PUSH_PEOPLE_VERSION"
   local src="$HOME/Pictures/images/characters"
   local work="$src/.faststart"
   (
