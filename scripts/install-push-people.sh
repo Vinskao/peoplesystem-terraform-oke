@@ -13,7 +13,9 @@ target="$here/push-people.sh"
 [ -f "$target" ] || { echo "[x] 找不到 $target"; exit 1; }
 
 rc="$HOME/.bashrc"
-[ -n "${ZSH_VERSION:-}" ] && rc="$HOME/.zshrc"
+if [ -n "${ZSH_VERSION:-}" ] || [ "$(basename "${SHELL:-}")" = "zsh" ]; then
+  rc="$HOME/.zshrc"
+fi
 touch "$rc"
 
 marker='# >>> ty-multiverse push-people >>>'

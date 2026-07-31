@@ -10,7 +10,7 @@
 # Bump this whenever the script changes. It is printed on every run so that a
 # pasted log immediately shows which version produced it - the profile only
 # re-reads this file when it loads, so a stale session is easy to miss.
-$script:PushPeopleVersion = '2026.07.28-4'
+$script:PushPeopleVersion = '2026.07.29-1'
 
 # Re-reads this file into the current session. Use after the repo copy changes,
 # instead of remembering `. $PROFILE` (which also re-runs everything else).
