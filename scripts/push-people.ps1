@@ -10,7 +10,7 @@
 # Bump this whenever the script changes. It is printed on every run so that a
 # pasted log immediately shows which version produced it - the profile only
 # re-reads this file when it loads, so a stale session is easy to miss.
-$script:PushPeopleVersion = '2026.08.10-1'
+$script:PushPeopleVersion = '2026.08.10-2'
 
 # Re-reads this file into the current session. Use after the repo copy changes,
 # instead of remembering `. $PROFILE` (which also re-runs everything else).
@@ -159,10 +159,10 @@ function push-people {
 
   # single-quoted here-string: PowerShell must NOT expand $(...) or $f - the remote shell handles them.
   #
-  # This is piped to ssh via STDIN, never passed as an argument. PowerShell 5.1
-  # mangles double quotes when handing arguments to a native exe, which silently
-  # turned printf '{"files":[' into printf '{files:[' and produced invalid JSON.
-  # Feeding the script on stdin keeps every character intact.
+  # Sent to ssh base64-encoded (see below), never as a raw argument or piped
+  # via stdin. PowerShell 5.1 mangles double quotes when handing raw text as
+  # an argument to a native exe, which silently turned printf '{"files":[' into
+  # printf '{files:[' and produced invalid JSON - base64 has no quotes to mangle.
   $remote = @'
 set -u
 POD=$(kubectl get pod -l app=image-server -o jsonpath="{.items[0].metadata.name}")
@@ -236,22 +236,22 @@ rm -f /tmp/*.png /tmp/*.mp4 /tmp/_mp4s.txt /tmp/pair-videos.json
 echo "cleaned /tmp"
 '@
 
-  # Pipe on stdin - see the note above. Never `& ssh oke-node $remote`.
+  # Never pipe $remote to ssh's stdin, and never pass it as a literal argument.
   #
-  # $OutputEncoding defaults to [System.Text.Encoding]::UTF8, whose GetPreamble()
-  # emits a BOM - PowerShell prepends it to whatever gets piped to a native exe.
-  # That BOM landed in front of "set -u" on the remote end, so bash saw literal
-  # U+FEFF and failed with "command not found" before running a single line.
-  # The here-string also carries Windows CRLF, which bash read as literal \r,
-  # producing "syntax error near unexpected token $'do\r''". Fix both: swap in
-  # a no-BOM UTF8 encoding for this one call, and normalize to LF before piping.
-  $prevOutputEncoding = $OutputEncoding
-  $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
-  try {
-    ($remote -replace "`r`n", "`n") | & ssh oke-node bash -s
-  } finally {
-    $OutputEncoding = $prevOutputEncoding
-  }
+  # Piping through the PowerShell pipeline lets it prepend a UTF-8 BOM ahead of
+  # the first byte no matter what $OutputEncoding is set to - a long-standing
+  # Windows PowerShell 5.1 quirk when handing piped text to a native exe's
+  # stdin. That BOM landed in front of "set -u" on the remote end, so bash saw
+  # literal U+FEFF and failed with "command not found" before running a single
+  # line. The here-string also carries Windows CRLF, which bash read as
+  # literal \r, producing "syntax error near unexpected token $'do\r''".
+  #
+  # Base64-encoding the script and passing it as a normal command-line
+  # argument sidesteps both: a base64 blob has no CR/LF/BOM to corrupt, and
+  # argument-passing never goes through the pipe-to-stdin encoding path.
+  $remoteBytes = [System.Text.Encoding]::UTF8.GetBytes($remote -replace "`r`n", "`n")
+  $remoteB64 = [Convert]::ToBase64String($remoteBytes)
+  & ssh oke-node "echo $remoteB64 | base64 -d | bash"
   if ($LASTEXITCODE -ne 0) {
     Write-Host "[!] remote step exited with code $LASTEXITCODE" -ForegroundColor Yellow
     return
