@@ -10,7 +10,7 @@
 # Bump this whenever the script changes. It is printed on every run so that a
 # pasted log immediately shows which version produced it - the profile only
 # re-reads this file when it loads, so a stale session is easy to miss.
-$script:PushPeopleVersion = '2026.07.29-1'
+$script:PushPeopleVersion = '2026.08.10-1'
 
 # Re-reads this file into the current session. Use after the repo copy changes,
 # instead of remembering `. $PROFILE` (which also re-runs everything else).
@@ -237,7 +237,21 @@ echo "cleaned /tmp"
 '@
 
   # Pipe on stdin - see the note above. Never `& ssh oke-node $remote`.
-  $remote | & ssh oke-node bash -s
+  #
+  # $OutputEncoding defaults to [System.Text.Encoding]::UTF8, whose GetPreamble()
+  # emits a BOM - PowerShell prepends it to whatever gets piped to a native exe.
+  # That BOM landed in front of "set -u" on the remote end, so bash saw literal
+  # U+FEFF and failed with "command not found" before running a single line.
+  # The here-string also carries Windows CRLF, which bash read as literal \r,
+  # producing "syntax error near unexpected token $'do\r''". Fix both: swap in
+  # a no-BOM UTF8 encoding for this one call, and normalize to LF before piping.
+  $prevOutputEncoding = $OutputEncoding
+  $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+  try {
+    ($remote -replace "`r`n", "`n") | & ssh oke-node bash -s
+  } finally {
+    $OutputEncoding = $prevOutputEncoding
+  }
   if ($LASTEXITCODE -ne 0) {
     Write-Host "[!] remote step exited with code $LASTEXITCODE" -ForegroundColor Yellow
     return
