@@ -10,7 +10,7 @@
 # Bump this whenever the script changes. It is printed on every run so that a
 # pasted log immediately shows which version produced it - the profile only
 # re-reads this file when it loads, so a stale session is easy to miss.
-$script:PushPeopleVersion = '2026.08.10-2'
+$script:PushPeopleVersion = '2026.08.10-3'
 
 # Re-reads this file into the current session. Use after the repo copy changes,
 # instead of remembering `. $PROFILE` (which also re-runs everything else).
@@ -249,7 +249,7 @@ echo "cleaned /tmp"
   # Base64-encoding the script and passing it as a normal command-line
   # argument sidesteps both: a base64 blob has no CR/LF/BOM to corrupt, and
   # argument-passing never goes through the pipe-to-stdin encoding path.
-  $remoteBytes = [System.Text.Encoding]::UTF8.GetBytes($remote -replace "`r`n", "`n")
+  $remoteBytes = [System.Text.Encoding]::UTF8.GetBytes(($remote -replace "`r`n", "`n"))
   $remoteB64 = [Convert]::ToBase64String($remoteBytes)
   & ssh oke-node "echo $remoteB64 | base64 -d | bash"
   if ($LASTEXITCODE -ne 0) {
