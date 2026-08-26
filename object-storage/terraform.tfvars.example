@@ -9,7 +9,8 @@ namespace = null
 
 access_type           = "NoPublicAccess"
 storage_tier          = "Standard"
-versioning            = "Disabled"
+# Enable versioning so publish overwrites keep the previous version (rollback without delete).
+versioning            = "Enabled"
 auto_tiering          = "Disabled"
 object_events_enabled = false
 
