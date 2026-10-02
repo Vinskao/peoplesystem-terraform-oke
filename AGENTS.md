@@ -164,6 +164,16 @@ kubectl patch validatingwebhookconfiguration ingress-nginx-admission \
   --type='json' -p='[{"op":"replace","path":"/webhooks/0/failurePolicy","value":"Ignore"}]'
 ```
 
+## 網路與對外暴露現況（2026-10-02 盤點）
+
+- 兩個 worker：`10.0.158.183`（gateway、postgres、redis）、`10.0.159.167`（backend、consumer、frontend、rabbitmq、keycloak、ingress-nginx）。
+- 公開 ingress（同一 host `peoplesystem.tatdvsonorth.com`，HTTP 會 308 轉 HTTPS）：`/tymb`→backend（**直接公開，不經 gateway**，前端直接呼叫）、
+  `/tymg`→gateway、`/tymultiverse`、`/sso`、`/jenkins`（Keycloak SSO + 2FA）、`/maya-sawa` 等。consumer 只有 ClusterIP。
+- **CNI 只有 flannel，NetworkPolicy 不會被執行**：既有的 `default/postgres` policy 從未生效，叢集內 pod 之間沒有隔離。
+  要做網段隔離需先裝 Calico（policy-only 模式）或改用支援 policy 的 CNI——這是獨立的基礎設施決策，
+  在那之前不要新增 NetworkPolicy（不會生效，只會造成「有保護」的錯覺）。
+- 尚未處理：ingress 層的 rate limiting、`/jenkins` 來源 IP 白名單。
+
 ## Ingress 範本：Jenkins
 
 ```yaml
