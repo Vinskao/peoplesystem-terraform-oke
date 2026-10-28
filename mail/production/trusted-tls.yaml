@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ty-mail
+spec:
+  template:
+    spec:
+      containers:
+        - name: mailserver
+          env:
+            - { name: SSL_CERT_PATH, value: /etc/mail-tls/tls.crt }
+            - { name: SSL_KEY_PATH, value: /etc/mail-tls/tls.key }
+          volumeMounts:
+            - name: trusted-tls
+              mountPath: /etc/mail-tls
+              readOnly: true
+      volumes:
+        - name: trusted-tls
+          secret:
+            secretName: mail-public-tls

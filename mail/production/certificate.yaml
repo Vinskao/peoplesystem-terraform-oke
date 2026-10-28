@@ -1,0 +1,12 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: mail-public
+  namespace: mail-system
+spec:
+  secretName: mail-public-tls
+  issuerRef:
+    name: letsencrypt-http01
+    kind: ClusterIssuer
+  dnsNames:
+    - mx.peoplesystem.tatdvsonorth.com

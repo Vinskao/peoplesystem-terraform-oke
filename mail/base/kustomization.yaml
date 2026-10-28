@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: mail-system
+resources:
+  - namespace.yaml
+  - mailserver.yaml
+configMapGenerator:
+  - name: mail-config
+    files:
+      - config/postfix-main.cf
+      - config/postfix-virtual.cf
+      - config/arc.conf
+      - config/worker-controller.inc
+generatorOptions:
+  disableNameSuffixHash: false

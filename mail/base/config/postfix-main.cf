@@ -1,0 +1,21 @@
+# Forward-only: no authenticated submission and no trusted cluster network.
+myhostname = mx.peoplesystem.tatdvsonorth.com
+mydomain = peoplesystem.tatdvsonorth.com
+myorigin = $mydomain
+mydestination = localhost
+virtual_alias_domains = peoplesystem.tatdvsonorth.com
+virtual_alias_maps = texthash:/tmp/docker-mailserver/postfix-virtual.cf
+mynetworks = 127.0.0.0/8
+smtpd_sasl_auth_enable = no
+smtpd_relay_restrictions = reject_unauth_destination
+smtpd_recipient_restrictions = reject_non_fqdn_recipient, reject_unlisted_recipient
+smtpd_reject_unlisted_recipient = yes
+smtpd_sender_restrictions = reject_non_fqdn_sender
+local_transport = error:Local mailbox delivery is disabled
+smtp_tls_security_level = encrypt
+smtp_connect_timeout = 10s
+smtp_helo_name = smtp-out.peoplesystem.tatdvsonorth.com
+message_size_limit = 10485760
+maximal_queue_lifetime = 3d
+bounce_queue_lifetime = 1d
+milter_default_action = tempfail

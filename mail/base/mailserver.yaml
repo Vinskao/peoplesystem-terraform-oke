@@ -1,0 +1,120 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailserver
+spec:
+  type: ClusterIP
+  selector:
+    app: ty-mail
+  ports:
+    - name: smtp
+      port: 25
+      targetPort: 25
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ty-mail
+spec:
+  serviceName: mailserver
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ty-mail
+  template:
+    metadata:
+      labels:
+        app: ty-mail
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      # Node-local queue survives pod replacement, not node loss. See README backup instructions.
+      nodeSelector:
+        kubernetes.io/hostname: 10.0.158.183
+      initContainers:
+        - name: configure
+          image: ghcr.io/docker-mailserver/docker-mailserver:16.0.1@sha256:a75d7ceea44e5828de67bcf0512589321c43d605d320ae4595f75972c8af329f
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              umask 077
+              mkdir -p /data/config/rspamd/override.d /data/config/rspamd/dkim /data/state/tls /data/logs /data/mail
+              chmod 700 /data
+              chmod 755 /data/config /data/config/rspamd /data/config/rspamd/override.d
+              cp /config/postfix-main.cf /data/config/postfix-main.cf
+              cp /config/postfix-virtual.cf /data/config/postfix-virtual.cf
+              cp /config/arc.conf /data/config/rspamd/override.d/arc.conf
+              cp /config/worker-controller.inc /data/config/rspamd/override.d/worker-controller.inc
+              if [ ! -s /data/config/rspamd/dkim/arc.key ]; then
+                openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /data/config/rspamd/dkim/arc.key
+              fi
+              chown -R _rspamd:_rspamd /data/config/rspamd/dkim
+              chmod 750 /data/config/rspamd/dkim
+              chmod 640 /data/config/rspamd/dkim/arc.key
+              if [ ! -s /data/state/tls/key.pem ]; then
+                openssl req -x509 -newkey rsa:2048 -nodes -days 14 -subj /CN=mx.peoplesystem.tatdvsonorth.com \
+                  -addext subjectAltName=DNS:mx.peoplesystem.tatdvsonorth.com \
+                  -keyout /data/state/tls/key.pem -out /data/state/tls/cert.pem
+              fi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config
+              readOnly: true
+      containers:
+        - name: mailserver
+          image: ghcr.io/docker-mailserver/docker-mailserver:16.0.1@sha256:a75d7ceea44e5828de67bcf0512589321c43d605d320ae4595f75972c8af329f
+          env:
+            - { name: OVERRIDE_HOSTNAME, value: mx.peoplesystem.tatdvsonorth.com }
+            - { name: TZ, value: Asia/Taipei }
+            - { name: SMTP_ONLY, value: "1" }
+            - { name: PERMIT_DOCKER, value: none }
+            - { name: POSTFIX_INET_PROTOCOLS, value: ipv4 }
+            - { name: ENABLE_SRS, value: "1" }
+            - name: SRS_SECRET
+              valueFrom:
+                secretKeyRef: { name: mail-signing, key: srs }
+            - { name: SRS_SENDER_CLASSES, value: envelope_sender }
+            - { name: ENABLE_RSPAMD, value: "1" }
+            - { name: ENABLE_RSPAMD_REDIS, value: "1" }
+            - { name: RSPAMD_GREYLISTING, value: "0" }
+            - { name: ENABLE_OPENDKIM, value: "0" }
+            - { name: ENABLE_OPENDMARC, value: "0" }
+            - { name: ENABLE_POLICYD_SPF, value: "0" }
+            - { name: ENABLE_AMAVIS, value: "0" }
+            - { name: ENABLE_SPAMASSASSIN, value: "0" }
+            - { name: ENABLE_POSTGREY, value: "0" }
+            - { name: ENABLE_CLAMAV, value: "0" }
+            - { name: ENABLE_FAIL2BAN, value: "0" }
+            - { name: ENABLE_DNSBL, value: "0" }
+            - { name: POSTMASTER_ADDRESS, value: postmaster@peoplesystem.tatdvsonorth.com }
+            - { name: SSL_TYPE, value: manual }
+            - { name: SSL_CERT_PATH, value: /var/mail-state/tls/cert.pem }
+            - { name: SSL_KEY_PATH, value: /var/mail-state/tls/key.pem }
+          ports:
+            - { name: smtp, containerPort: 25 }
+          resources:
+            requests: { cpu: 100m, memory: 384Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          startupProbe:
+            tcpSocket: { port: smtp }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket: { port: smtp }
+            periodSeconds: 15
+          volumeMounts:
+            - { name: data, mountPath: /tmp/docker-mailserver, subPath: config }
+            - { name: data, mountPath: /var/mail-state, subPath: state }
+            - { name: data, mountPath: /var/log/mail, subPath: logs }
+            - { name: data, mountPath: /var/mail, subPath: mail }
+      volumes:
+        - name: config
+          configMap:
+            name: mail-config
+        - name: data
+          hostPath:
+            path: /var/lib/ty-mail
+            type: DirectoryOrCreate
