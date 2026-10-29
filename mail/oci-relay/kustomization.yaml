@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: mail-system
+resources:
+  - ../base
+  - ../relay
+configMapGenerator:
+  - name: mail-config
+    behavior: merge
+    files:
+      - user-patches.sh
+      - oci-transport.cf
+patches:
+  - path: relay.yaml

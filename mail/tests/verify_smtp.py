@@ -34,14 +34,16 @@ class SmtpPolicyTests(unittest.TestCase):
     def test_external_relay_is_denied_even_from_localhost(self):
         self.assertIn(self.recipient('unrelated-recipient@gmail.com'), (550, 554))
 
-    def test_starttls_with_the_known_staging_certificate(self):
-        context = ssl.create_default_context(cafile='/var/mail-state/tls/cert.pem')
+    def test_starttls_with_the_configured_certificate(self):
+        context = ssl.create_default_context()
+        context.load_verify_locations(cafile=os.environ.get('SSL_CERT_PATH', '/var/mail-state/tls/cert.pem'))
         # SMTP connects by loopback; check the expected hostname after verifying the certificate chain.
         context.check_hostname = False
         self.smtp.starttls(context=context)
         common_names = [value for entry in self.smtp.sock.getpeercert()['subject']
                         for key, value in entry if key == 'commonName']
         self.assertIn(f'mx.{DOMAIN}', common_names)
+        self.assertIn(('DNS', f'mx.{DOMAIN}'), self.smtp.sock.getpeercert()['subjectAltName'])
 
     def test_rspamd_configuration_is_valid(self):
         subprocess.run(['rspamadm', 'configtest'], check=True, capture_output=True)

@@ -3,7 +3,23 @@
 Address: `tianyikao@peoplesystem.tatdvsonorth.com` → `tianyikao@gmail.com`.
 `postmaster` and `abuse` at the same domain also forward there. No catch-all.
 
-## Deployment and current boundary
+## Current delivery choice (2026-10-29)
+
+The owner chose OCI Email Delivery for outbound delivery, using the domain inbox
+as the approved From address, original Reply-To, and a byte-preserving original
+message attachment. See [the relay setup](relay/README.md). `mail/oci-relay` is the
+private staging overlay; `mail/production` now extends it with trusted inbound TLS.
+Production is deployed with its dedicated SMTP identity, Secret and verified domain.
+Public receiving is enabled on the existing OCI LB, with PROXYv1 to a dedicated
+NodePort backend. The external Gmail -> custom MX -> OCI -> Gmail roundtrip passed.
+See [mail operations](docs/MAIL_OPERATIONS_RUNBOOK.md) and
+[Oracle support routing](docs/ORACLE_SUPPORT_RUNBOOK.md) for the current runbooks.
+Its initial incoming-message limit is 1,000,000 bytes to fit the managed service's
+default 2 MB submission limit after wrapping. This path requires no direct egress
+TCP/25 exemption or egress PTR. The direct-delivery preflight and SRS notes below
+describe the earlier staging setup, not the selected production relay path.
+
+## Earlier base staging deployment (not the production entry point)
 
 Uses the upstream Docker Mailserver 16.0.1 ARM64 image to run Postfix, Rspamd,
 Redis and PostSRSd together. SMTP-only mode disables mailboxes. Only port 25 is

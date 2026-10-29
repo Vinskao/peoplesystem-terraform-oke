@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ty-mail
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: configure-oci-relay
+          image: ghcr.io/docker-mailserver/docker-mailserver:16.0.1@sha256:a75d7ceea44e5828de67bcf0512589321c43d605d320ae4595f75972c8af329f
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              umask 077
+              mkdir -p /data/state/oci-relay
+              cp /relay-config/user-patches.sh /data/config/user-patches.sh
+              cp /relay-config/oci-transport.cf /data/config/oci-transport.cf
+              chmod 0500 /data/config/user-patches.sh
+              chmod 0644 /data/config/oci-transport.cf
+              cp /relay-secret/relay.json /data/state/oci-relay/relay.json
+              chown -R 65534:65534 /data/state/oci-relay
+              chmod 0500 /data/state/oci-relay
+              chmod 0400 /data/state/oci-relay/relay.json
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: config, mountPath: /relay-config, readOnly: true }
+            - { name: oci-smtp, mountPath: /relay-secret, readOnly: true }
+      containers:
+        - name: mailserver
+          env:
+            - { name: ENABLE_SRS, value: "0" }
+          volumeMounts:
+            - { name: oci-forward-program, mountPath: /opt/oci-forward, readOnly: true }
+      volumes:
+        - name: oci-forward-program
+          configMap:
+            name: oci-forward-program
+        - name: oci-smtp
+          secret:
+            secretName: oci-smtp
+            defaultMode: 256
