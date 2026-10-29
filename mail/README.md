@@ -1,6 +1,6 @@
 # OKE forwarding mail gateway
 
-Address: `hello@peoplesystem.tatdvsonorth.com` → `tianyikao@gmail.com`.
+Address: `tianyikao@peoplesystem.tatdvsonorth.com` → `tianyikao@gmail.com`.
 `postmaster` and `abuse` at the same domain also forward there. No catch-all.
 
 ## Deployment and current boundary
@@ -59,7 +59,7 @@ causes a pod restart. Existing private keys are retained.
 ## Completed staging verification (2026-10-28)
 
 The live `mail-system/ty-mail-0` pod is Ready on worker `10.0.158.183`.
-Eight SMTP tests pass: the allowlisted alias, rejection of unknown recipients,
+Eight SMTP tests pass: the allowlisted address, rejection of unknown recipients,
 forged SRS recipients and arbitrary external relay, trusted staging TLS handshake,
 Rspamd config validation, no catch-all and a loopback-only Rspamd controller.
 An initial controller-binding test failed and passed after binding port 11334 to
@@ -119,7 +119,7 @@ intact. ARC records the authentication checks before forwarding. Neither guarant
 that Gmail will trust a new forwarding IP. Measure actual acceptance and spam-folder
 placement before relying on this address for an application.
 
-## OCI support request draft
+## OCI support request
 
 > Please review the outbound SMTP TCP/25 restriction for my tenancy in
 > ap-singapore-2. I am setting up an allowlisted, single-domain inbound mail
@@ -130,7 +130,8 @@ placement before relying on this address for an application.
 > smtp-out.peoplesystem.tatdvsonorth.com. The operator currently uses
 > 140.245.44.81; I will supply the mail pod's verified egress IP.
 
-This text is a draft, not a submitted support request.
+Submitted to Oracle as support request `4-0004161116`; status was Pending at the
+last check. TCP/25 egress and PTR setup remain prerequisites before publication.
 
 ## References
 

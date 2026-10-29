@@ -68,7 +68,7 @@ try:
     run('postfix', 'reload')
     message = EmailMessage()
     message['From'] = 'SMTP Verification <sender@example.org>'
-    message['To'] = 'hello@peoplesystem.tatdvsonorth.com'
+    message['To'] = 'tianyikao@peoplesystem.tatdvsonorth.com'
     message['Subject'] = 'Synthetic local mail-forward verification'
     message['Date'] = email.utils.formatdate(localtime=False)
     message['Message-ID'] = message_id

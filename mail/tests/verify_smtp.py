@@ -19,8 +19,11 @@ class SmtpPolicyTests(unittest.TestCase):
         self.assertEqual(self.smtp.mail('sender@example.org')[0], 250)
         return self.smtp.rcpt(address)[0]
 
-    def test_known_alias_is_accepted(self):
-        self.assertEqual(self.recipient(f'hello@{DOMAIN}'), 250)
+    def test_primary_address_is_accepted(self):
+        self.assertEqual(self.recipient(f'tianyikao@{DOMAIN}'), 250)
+
+    def test_old_hello_alias_is_not_accepted(self):
+        self.assertEqual(self.recipient(f'hello@{DOMAIN}'), 550)
 
     def test_unknown_recipient_is_rejected_before_data(self):
         self.assertEqual(self.recipient(f'not-a-mailbox@{DOMAIN}'), 550)
@@ -55,7 +58,8 @@ class SmtpPolicyTests(unittest.TestCase):
                                     text=True, capture_output=True)
             self.assertIn(result.returncode, (0, 1), result.stderr)
             return result.stdout.strip()
-        self.assertEqual(lookup(f'hello@{DOMAIN}'), 'tianyikao@gmail.com')
+        self.assertEqual(lookup(f'tianyikao@{DOMAIN}'), 'tianyikao@gmail.com')
+        self.assertEqual(lookup(f'hello@{DOMAIN}'), '')
         self.assertEqual(lookup(f'@{DOMAIN}'), '')
 
 
