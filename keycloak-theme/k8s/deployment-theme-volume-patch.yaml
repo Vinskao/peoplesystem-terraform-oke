@@ -1,0 +1,18 @@
+spec:
+  template:
+    spec:
+      containers:
+        - name: keycloak
+          volumeMounts:
+            - name: login-theme
+              mountPath: /opt/keycloak/themes/ty-multiverse/login
+              readOnly: true
+      volumes:
+        - name: login-theme
+          configMap:
+            name: keycloak-login-theme
+            items:
+              - key: theme.properties
+                path: theme.properties
+              - key: login.css
+                path: resources/css/login.css
