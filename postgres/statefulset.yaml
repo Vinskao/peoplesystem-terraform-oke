@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: default
+  labels:
+    app: postgres
+spec:
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  podManagementPolicy: OrderedReady
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: postgres
+  serviceName: postgres-hl
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      serviceAccountName: postgres
+      nodeSelector:
+        shared-pvc: "true"
+      securityContext:
+        fsGroup: 999
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg17
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: postgres-password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: tcp-postgresql
+              containerPort: 5432
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 25m
+              memory: 384Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - exec pg_isready -U postgres -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 12
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - exec pg_isready -U postgres -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 6
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+              subPath: postgres
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: shared-pvc-1
+  updateStrategy:
+    type: OnDelete

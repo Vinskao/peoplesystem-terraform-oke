@@ -19,11 +19,12 @@ terraform init
 terraform plan
 terraform apply
 
-# then deploy the backup job
-kubectl apply -f k8s-cronjob.yaml
-# run it once immediately to verify
+# deploy both the application DB and Keycloak DB backups
+kubectl apply -k .
+# run each backup once immediately to verify
 kubectl create job -n default --from=cronjob/db-backup db-backup-manual
-kubectl logs -n default job/db-backup-manual --all-containers -f
+kubectl create job -n default --from=cronjob/keycloak-db-backup keycloak-db-backup-manual
+kubectl logs -n default job/keycloak-db-backup-manual --all-containers -f
 ```
 
 ## Notes
@@ -35,3 +36,9 @@ kubectl logs -n default job/db-backup-manual --all-containers -f
   has the OCI CLI, or build a small one — the upload command is standard.
 - Restore a dump:
   `gunzip -c peoplesystem-<ts>.sql.gz | psql -h postgres -U postgres -d peoplesystem`
+- Keycloak connects to the `postgres` database. Its daily dump is named
+  `keycloak-postgres-<UTC timestamp>.sql.gz` in the same private, versioned OCI bucket.
+- Both scripts use `pipefail`, reject empty or invalid gzip files, and verify the archive before
+  upload. A failed `pg_dump` prevents the upload container from running.
+- The Admin Console's **Partial export** does not include users. The PostgreSQL logical dump is the
+  recovery copy for Keycloak users, realms, clients, roles, and stored configuration.

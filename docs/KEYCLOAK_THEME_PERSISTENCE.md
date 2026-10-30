@@ -24,11 +24,12 @@ The same Keycloak SSO is only for TY Multiverse's own approval interface. It is 
 - Realm internationalization is enabled; the default locale is `zh-TW`, with `zh-TW` and `en` supported. This setting was saved in the Admin Console and Keycloak confirmed the Realm update.
 - A Kustomize ConfigMap generator and Deployment volume patch are saved in `../keycloak-theme/k8s/`. They have **not** been applied to the cluster.
 - Therefore the theme is saved in the workspace repository, but it is **not yet active or persisted in the cluster**.
-- The current live Deployment's administrator environment is defined as literal values. A `keycloak-admin` Secret exists, but its password does not match the Deployment's configured password. Do not point the Deployment at that Secret or restart Keycloak until the administrator credential has been rotated and the Secret contains the matching new value. Never print or commit the credential.
+- The live Deployment contains legacy bootstrap administrator environment settings, while a `keycloak-admin` Secret also exists. These are not the current `wavo` account password: the stored account is in the existing master realm database. Keycloak's bootstrap credentials create an initial admin only before the master realm exists; changing them does not reset an existing account. Do not copy the user-managed `wavo` password into Kubernetes or print/commit any credential. Review and remove or secure unused bootstrap values as a separate hardening task.
+- PostgreSQL uses the `shared-pvc-1` claim with the `postgres` database for Keycloak. Its restart and backup verification are recorded in [`KEYCLOAK_PERSISTENCE_AND_USER_INVENTORY.md`](KEYCLOAK_PERSISTENCE_AND_USER_INVENTORY.md).
 
 ## Apply checklist
 
-1. Migrate/rotate the administrator credential into a Kubernetes Secret; do not expose its value.
+1. Verify the existing `wavo` admin login through the browser. Do not rotate its password by changing bootstrap environment variables; those only apply before the master realm exists.
 2. Render the checked-in ConfigMap with `kubectl kustomize keycloak-theme/` and review the output. The Deployment mount is a separate strategic patch.
 3. Verify the active Realm and its existing `loginTheme` value with an authenticated admin session. Preserve the old value for rollback.
 4. Set the Realm's Login theme to `ty-multiverse` through the Keycloak Admin Console or `kcadm.sh`; this setting must be persisted in the Realm database, not only in a container file.
