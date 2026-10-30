@@ -15,15 +15,16 @@ Do not treat either an in-container edit or a manually selected theme as fully h
 
 The same Keycloak SSO is only for TY Multiverse's own approval interface. It is not a Threads or LinkedIn sign-in and does not grant permission to publish. Social publishing requires the separate provider OAuth grants documented in `../../ty-multiverse-frontend/docs/THREADS_LINKEDIN_AUTOMATION.md`.
 
-## Current source and state (2026-10-29)
+## Current source and state (2026-10-30)
 
 - Theme source: `../keycloak-theme/ty-multiverse/login/`.
 - Keycloak image observed: `quay.io/keycloak/keycloak:26.1.4`; context path `/sso`.
 - The Deployment currently has no theme volume. It is a single-replica `Recreate` Deployment, so any template change/restart temporarily interrupts SSO.
 - The live Realm theme has **not** been changed. Admin CLI login attempts timed out. No ConfigMap, mount, or production rollout was applied in that session.
+- Realm internationalization is enabled; the default locale is `zh-TW`, with `zh-TW` and `en` supported. This setting was saved in the Admin Console and Keycloak confirmed the Realm update.
 - A Kustomize ConfigMap generator and Deployment volume patch are saved in `../keycloak-theme/k8s/`. They have **not** been applied to the cluster.
 - Therefore the theme is saved in the workspace repository, but it is **not yet active or persisted in the cluster**.
-- The current live Deployment's administrator env is defined as literal values in its manifest. Before a future rollout, migrate the administrator credential to a Kubernetes Secret and rotate it; do not print or commit the secret value.
+- The current live Deployment's administrator environment is defined as literal values. A `keycloak-admin` Secret exists, but its password does not match the Deployment's configured password. Do not point the Deployment at that Secret or restart Keycloak until the administrator credential has been rotated and the Secret contains the matching new value. Never print or commit the credential.
 
 ## Apply checklist
 
