@@ -31,6 +31,7 @@ The same Keycloak SSO is only for TY Multiverse's own approval interface. It is 
 2. Render the checked-in ConfigMap with `kubectl kustomize keycloak-theme/` and review the output. The Deployment mount is a separate strategic patch.
 3. Verify the active Realm and its existing `loginTheme` value with an authenticated admin session. Preserve the old value for rollback.
 4. Set the Realm's Login theme to `ty-multiverse` through the Keycloak Admin Console or `kcadm.sh`; this setting must be persisted in the Realm database, not only in a container file.
+   - In **Realm settings → Localization**, enable internationalization, set **Default locale** to `zh-TW`, keep `en` in **Supported locales**, and leave the login locale selector available. This controls message translation; CSS only controls appearance.
 5. Once the theme files, admin Secret, Realm setting, and rollback value are ready, apply `kubectl apply -k keycloak-theme/`, then `kubectl patch deployment keycloak -n default --type=strategic --patch-file keycloak-theme/k8s/deployment-theme-volume-patch.yaml`. Wait for rollout and confirm `/sso` login and registration pages render, including mobile and error states.
 6. Verify a Pod replacement/restart retains the selected theme. Confirm PostgreSQL persistence separately; do not infer database durability from Pod readiness.
 

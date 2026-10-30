@@ -2,6 +2,8 @@
 
 This theme styles both Keycloak sign-in and account-registration forms with the site's black, charcoal, white, and gray palette. It extends the Keycloak 26 `keycloak.v2` login theme, so form behavior, accessibility structure, localization, and validation remain owned by Keycloak.
 
+The stylesheet targets the live Keycloak v2 / PatternFly 5 markup (`.pf-v5-c-*`) and removes the default polygon background. To make Traditional Chinese the initial login language, enable Realm internationalization, set the default locale to `zh-TW`, and retain `en` as a supported locale in Realm settings. Keep the locale picker enabled so users can switch language; theme CSS does not translate Keycloak's messages.
+
 ## Package and enable
 
 Package `ty-multiverse/login` as a directory under `/opt/keycloak/themes/` (for example, mount it from a ConfigMap or bake it into the Keycloak image). Then select `ty-multiverse` as the realm's **Login theme** under **Realm settings → Themes**. Registration inherits the same login theme.
