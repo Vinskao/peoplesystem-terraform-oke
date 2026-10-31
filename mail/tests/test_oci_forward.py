@@ -34,6 +34,11 @@ class ForwardMessageTests(unittest.TestCase):
         self.assertEqual(str(msg["Subject"]), "Verify your business address")
         self.assertEqual(str(msg["Auto-Submitted"]), "auto-forwarded")
 
+    def test_sends_as_the_primary_domain_approved_sender(self):
+        # Must match an OCI Approved Sender in ty-mail; the old domain stays receive-only.
+        self.assertEqual(SENDER, "tianyikao@tymultiverse.cc")
+        self.assertTrue(str(build_message(ORIGINAL)["Message-ID"]).endswith("@tymultiverse.cc>"))
+
     def test_preserves_original_bytes_and_readable_verification_link(self):
         msg = build_message(ORIGINAL)
         serialized = msg.as_bytes(policy=policy.SMTP)

@@ -21,7 +21,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlsplit
 
-SENDER = "tianyikao@peoplesystem.tatdvsonorth.com"
+SENDER = "tianyikao@tymultiverse.cc"
 RECIPIENT = "tianyikao@gmail.com"
 MAX_ORIGINAL_BYTES = 1_000_000
 MAX_SUBMISSION_BYTES = 2_000_000
@@ -121,7 +121,7 @@ def build_message(raw):
         msg["Reply-To"] = reply_to
     msg["Date"] = format_datetime(datetime.now(timezone.utc))
     digest = hashlib.sha256(raw).hexdigest()[:40]
-    msg["Message-ID"] = f"<forward-{digest}@peoplesystem.tatdvsonorth.com>"
+    msg["Message-ID"] = f"<forward-{digest}@tymultiverse.cc>"
     msg["Auto-Submitted"] = "auto-forwarded"
     msg["X-Auto-Response-Suppress"] = "All"
     msg.set_content(
