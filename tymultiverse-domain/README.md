@@ -50,3 +50,14 @@
 - 使用瀏覽器測試 `https://tymultiverse.cc/`、無前綴子頁與實際導覽結果；檢查原站與登入，不以 HTTP 200 代替登入、授權或內容正確性的驗證。檢查 ACME solver 路徑在 HTTP／HTTPS 中沒有被根路由錯誤重寫。
 - 若新域 Ingress 造成問題，可在確認影響後僅刪除 `tymultiverse-domain-root` 與 `tymultiverse-domain-frontend`，或重新套用已審核的前版 `preview-ingress.yaml`；不要刪除 `peoplesystem-tls`、舊域 Ingress 或 Keycloak 資料。DNS 要回復時，原根域為 `ALIAS pixie.porkbun.com`、TTL 600；先確認後續是否已有新紀錄或郵件設定，再修改。DNS／憑證回復均需重新驗證。
 - 時間敏感資訊（IP、網域到期、DNS、部署映像、憑證狀態與工作目錄差異）是調查時的快照，執行前重新查證。
+
+## 2026-10-31 網站移到 https://tymultiverse.cc/ 根路徑
+
+- 前端 `base` 改為 `/`（ty-multiverse-frontend `9adec64`、`2625109`）。舊網址（舊網域任何頁面、任一網域的 `/tymultiverse/...`）由前端 middleware `src/scripts/site/legacyRedirect.ts` 回 301 到新網域同一頁並保留 query。ingress-nginx 的 `permanent-redirect` 不接受 `$2` 等變數（admission webhook 拒絕），所以轉址放在應用程式裡。
+- 前端 Jenkinsfile 只做 `kubectl set image`，**不會套用 `k8s/deployment.yaml` 的 Ingress**。改前端 Ingress 後要手動 `kubectl apply`。
+- 新網域路由：`ty-multiverse-frontend-ingress`（`/` → 前端）；其他服務見 `mirror-ingress.yaml`。`tymcc-portfolio-api-protected` 把 `/api/market/portfolio` 送到 maya-sawa（需登入，未登入 401），前端部署時必須保留。
+- 舊網域：`ty-multiverse-frontend-legacy-ingress`（`/tymultiverse` 與 `/` Prefix → 前端轉址）；`/sso`、`/jenkins`、`/tymb`、`/tymg`、`/maya-sawa`、`/images` 仍照常服務，等 Keycloak 換網域後再處理。
+- 憑證 `tymultiverse-cc-tls` 改由 `certificate.yaml` 獨立管理（已移除對舊 Ingress 的 ownerReference）。`preview-ingress.yaml` 的兩個過渡規則已刪除。
+- Jenkins `vinskao` 資料夾的 `PUBLIC_TYMB_URL`、`PUBLIC_TYMG_URL`、`PUBLIC_PEOPLE_IMAGE_URL`、`PUBLIC_API_BASE_URL`、`PUBLIC_DECKOFCARDS_URL`、`PUBLIC_MAYA_SAWA_URL` 改為新網域，`PUBLIC_FRONTEND_URL` 改為 `https://tymultiverse.cc/`。`PUBLIC_SSO_URL`、`KEYCLOAK_AUTH_SERVER_URL` 仍是舊網域。線上 gateway secret 的 `PUBLIC_FRONTEND_URL` 尚未更新，下次 gateway 部署才會生效；在那之前登入回到舊網址，再經 301 帶 query 回新網域。
+- Keycloak PeopleSystem realm 的 `peoplesystem` client 加入 redirect URI `https://tymultiverse.cc/*` 與 web origin `https://tymultiverse.cc`，舊網域設定保留。
+- 驗收：`python tymultiverse-domain/verify_routes.py`。

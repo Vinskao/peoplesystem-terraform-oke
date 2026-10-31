@@ -1,0 +1,12 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: tymultiverse-cc-tls
+  namespace: default
+spec:
+  secretName: tymultiverse-cc-tls
+  issuerRef:
+    name: letsencrypt-http01
+    kind: ClusterIssuer
+  dnsNames:
+    - tymultiverse.cc

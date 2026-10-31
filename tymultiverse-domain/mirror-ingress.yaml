@@ -1,0 +1,205 @@
+# tymultiverse.cc serves every non-frontend path of the old host. The frontend itself
+# (path "/") is routed by ty-multiverse-frontend/k8s/deployment.yaml.
+# portfolio-api-protected: the frontend has its own /api/market/portfolio route; this Exact
+# rule sends that path to maya-sawa, which enforces auth. Keep it whenever the frontend deploys.
+# Generated from the live old-host Ingresses on 2026-10-31; keep annotations in sync.
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tymcc-image-server
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - tymultiverse.cc
+      secretName: tymultiverse-cc-tls
+  rules:
+    - host: tymultiverse.cc
+      http:
+        paths:
+          - path: /images/people/
+            pathType: Prefix
+            backend:
+              service:
+                name: image-server-service
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tymcc-jenkins
+  namespace: default
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - tymultiverse.cc
+      secretName: tymultiverse-cc-tls
+  rules:
+    - host: tymultiverse.cc
+      http:
+        paths:
+          - path: /jenkins
+            pathType: Prefix
+            backend:
+              service:
+                name: jenkins-service
+                port:
+                  number: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tymcc-keycloak
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - tymultiverse.cc
+      secretName: tymultiverse-cc-tls
+  rules:
+    - host: tymultiverse.cc
+      http:
+        paths:
+          - path: /sso
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tymcc-maya-sawa
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "1024m"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "1800"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "1800"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - tymultiverse.cc
+      secretName: tymultiverse-cc-tls
+  rules:
+    - host: tymultiverse.cc
+      http:
+        paths:
+          - path: /maya-sawa/
+            pathType: Prefix
+            backend:
+              service:
+                name: maya-sawa
+                port:
+                  number: 80
+          - path: /maya-v2/
+            pathType: Prefix
+            backend:
+              service:
+                name: maya-sawa
+                port:
+                  number: 80
+          - path: /voyeur/
+            pathType: Prefix
+            backend:
+              service:
+                name: maya-sawa
+                port:
+                  number: 80
+          - path: /paprika/
+            pathType: Prefix
+            backend:
+              service:
+                name: maya-sawa
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tymcc-portfolio-api-protected
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: "/maya-sawa/market/portfolio"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - tymultiverse.cc
+      secretName: tymultiverse-cc-tls
+  rules:
+    - host: tymultiverse.cc
+      http:
+        paths:
+          - path: /api/market/portfolio
+            pathType: Exact
+            backend:
+              service:
+                name: maya-sawa
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tymcc-ty-multiverse-backend
+  namespace: default
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - tymultiverse.cc
+      secretName: tymultiverse-cc-tls
+  rules:
+    - host: tymultiverse.cc
+      http:
+        paths:
+          - path: /tymb
+            pathType: Prefix
+            backend:
+              service:
+                name: ty-multiverse-backend
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tymcc-ty-multiverse-gateway
+  namespace: default
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - tymultiverse.cc
+      secretName: tymultiverse-cc-tls
+  rules:
+    - host: tymultiverse.cc
+      http:
+        paths:
+          - path: /tymg
+            pathType: Prefix
+            backend:
+              service:
+                name: ty-multiverse-gateway-service
+                port:
+                  number: 8082
