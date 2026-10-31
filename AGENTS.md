@@ -3,7 +3,7 @@
 ## Jenkins Access
 
 - Jenkins base URL:
-  - `https://peoplesystem.tatdvsonorth.com/jenkins/`
+  - `https://tymultiverse.cc/jenkins/`
 - Jenkins is also reachable from Kubernetes after `ssh oke-node`
   - namespace: `default`
   - pod label path: `deploy/jenkins`
@@ -167,8 +167,9 @@ kubectl patch validatingwebhookconfiguration ingress-nginx-admission \
 ## 網路與對外暴露現況（2026-10-02 盤點）
 
 - 兩個 worker：`10.0.158.183`（gateway、postgres、redis）、`10.0.159.167`（backend、consumer、frontend、rabbitmq、keycloak、ingress-nginx）。
-- 公開 ingress（同一 host `peoplesystem.tatdvsonorth.com`，HTTP 會 308 轉 HTTPS）：`/tymb`→backend（**直接公開，不經 gateway**，前端直接呼叫）、
-  `/tymg`→gateway、`/tymultiverse`、`/sso`、`/jenkins`（Keycloak SSO + 2FA）、`/maya-sawa` 等。consumer 只有 ClusterIP。
+- 公開 ingress（同一 host `tymultiverse.cc`，HTTP 會 308 轉 HTTPS）：`/tymb`→backend（**直接公開，不經 gateway**，前端直接呼叫）、
+  `/tymg`→gateway、`/`→前端、`/sso`、`/jenkins`（Keycloak SSO + 2FA）、`/maya-sawa` 等。consumer 只有 ClusterIP。
+  舊網域 `peoplesystem.tatdvsonorth.com` 的頁面 301 到新網域；`/sso` `/jenkins` `/tymb` `/tymg` `/maya-sawa` `/images` 在舊網域仍照常服務以相容舊 API 呼叫者（見 `tymultiverse-domain/README.md`）。
 - **CNI 只有 flannel，NetworkPolicy 不會被執行**：既有的 `default/postgres` policy 從未生效，叢集內 pod 之間沒有隔離。
   要做網段隔離需先裝 Calico（policy-only 模式）或改用支援 policy 的 CNI——這是獨立的基礎設施決策，
   在那之前不要新增 NetworkPolicy（不會生效，只會造成「有保護」的錯覺）。
@@ -188,10 +189,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - peoplesystem.tatdvsonorth.com
-      secretName: peoplesystem-tls
+        - tymultiverse.cc
+      secretName: tymultiverse-cc-tls
   rules:
-    - host: peoplesystem.tatdvsonorth.com
+    - host: tymultiverse.cc
       http:
         paths:
           - path: /jenkins
@@ -222,9 +223,9 @@ spec:
 PeopleSystem realm 建一個 OpenID Connect client：
 - Client ID：`jenkins`
 - Client authentication：**On**（confidential，client_secret_basic）
-- Valid redirect URIs：`https://peoplesystem.tatdvsonorth.com/jenkins/securityRealm/finishLogin`
-- Valid post logout redirect URIs：`https://peoplesystem.tatdvsonorth.com/jenkins/*`
-- Web origins：`https://peoplesystem.tatdvsonorth.com`
+- Valid redirect URIs：`https://tymultiverse.cc/jenkins/securityRealm/finishLogin`
+- Valid post logout redirect URIs：`https://tymultiverse.cc/jenkins/*`
+- Web origins：`https://tymultiverse.cc`
 - Credentials 分頁取得 Client secret
 
 ### Jenkins 端
@@ -234,7 +235,7 @@ PeopleSystem realm 建一個 OpenID Connect client：
    - Client id：`jenkins`
    - Client secret：貼上 Keycloak 的 secret
    - Configuration mode：Discovery via well-known endpoint
-   - Well-known endpoint：`https://peoplesystem.tatdvsonorth.com/sso/realms/PeopleSystem/.well-known/openid-configuration`
+   - Well-known endpoint：`https://tymultiverse.cc/sso/realms/PeopleSystem/.well-known/openid-configuration`
    - Advanced → User fields：User name field=`preferred_username`、Full name=`name`、Email=`email`
 3. Authorization 維持 "Logged-in users can do anything"。
 4. Save。新無痕視窗測試 → 跳轉 Keycloak → 密碼 + Google Authenticator → 回 Jenkins。
@@ -286,7 +287,7 @@ kubectl -n default patch deploy jenkins --type merge -p '{
 
 本地開發時，常需把 `~/Pictures/images/characters/` 的圖片更新到叢集內供圖的位置。一個縮短指令 `push-people` 可一鍵完成完整流程。
 
-**供圖架構**：圖片由 `default/image-server`（nginx）pod 提供，掛 PVC `image-pvc` 到 `/images/people`，pod 跑在 node `10.0.159.167`。前端從 `https://peoplesystem.tatdvsonorth.com/images/people/<name>.png` 取圖。
+**供圖架構**：圖片由 `default/image-server`（nginx）pod 提供，掛 PVC `image-pvc` 到 `/images/people`，pod 跑在 node `10.0.159.167`。前端從 `https://tymultiverse.cc/images/people/<name>.png` 取圖。
 
 **`push-people` 做的事（完整四步）**：
 0. **faststart 預處理**：所有 mp4 先用 `ffmpeg -c copy -movflags +faststart` 重新封裝到 `.faststart/`（不重新編碼），上傳的是處理後的版本

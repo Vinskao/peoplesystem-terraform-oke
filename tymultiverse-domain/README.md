@@ -61,3 +61,13 @@
 - Jenkins `vinskao` 資料夾的 `PUBLIC_TYMB_URL`、`PUBLIC_TYMG_URL`、`PUBLIC_PEOPLE_IMAGE_URL`、`PUBLIC_API_BASE_URL`、`PUBLIC_DECKOFCARDS_URL`、`PUBLIC_MAYA_SAWA_URL` 改為新網域，`PUBLIC_FRONTEND_URL` 改為 `https://tymultiverse.cc/`。`PUBLIC_SSO_URL`、`KEYCLOAK_AUTH_SERVER_URL` 仍是舊網域。線上 gateway secret 的 `PUBLIC_FRONTEND_URL` 尚未更新，下次 gateway 部署才會生效；在那之前登入回到舊網址，再經 301 帶 query 回新網域。
 - Keycloak PeopleSystem realm 的 `peoplesystem` client 加入 redirect URI `https://tymultiverse.cc/*` 與 web origin `https://tymultiverse.cc`，舊網域設定保留。
 - 驗收：`python tymultiverse-domain/verify_routes.py`。
+
+## 2026-10-31 Keycloak 改用 tymultiverse.cc
+
+- Keycloak Deployment `KC_HOSTNAME=tymultiverse.cc`（`KC_HTTP_RELATIVE_PATH=/sso` 不變）。issuer 變為 `https://tymultiverse.cc/sso/realms/PeopleSystem`；舊網域的 `/sso` 仍可連，但發的 token 也是新 issuer，所有人需重新登入一次。重啟要 3～5 分鐘（augmentation 約 200 秒），期間 `/sso` 502，Pod 會先顯示 Ready。Keycloak Deployment 不在任何 repo，只存在線上。
+- 同步更新：gateway／consumer／backend secret 的 `KEYCLOAK_AUTH_SERVER_URL`、gateway `PUBLIC_FRONTEND_URL`、maya-sawa Deployment env；Jenkins credentials `KEYCLOAK_AUTH_SERVER_URL`、`PUBLIC_SSO_URL`；backend（issuer 建置時寫入）與前端重新建置。改 secret 的步驟寫成腳本由使用者執行（auto mode 不允許 Claude 直接寫 secret）。
+- Keycloak client：`peoplesystem` 加 `https://tymultiverse.cc/*`；`jenkins` 加 `https://tymultiverse.cc/jenkins/securityRealm/finishLogin`、post logout `https://tymultiverse.cc/jenkins/*`、web origin。舊網域的 URI 仍保留。
+- Jenkins：Jenkins URL 改 `https://tymultiverse.cc/jenkins/`；`config.xml` 的 OIDC well-known 改新網域（備份 `config.xml.bak-20261031`），Jenkins 重啟後生效。Kubernetes cloud 的 agent 連線網址仍是舊網域（兩邊都通，未改以免中斷建置）。
+- 未改（需要外部設定）：maya-sawa `publisher_mcp.py` 的 `RESOURCE` 仍是舊網域，因為它必須等於 Keycloak 發給 ChatGPT 連接器 token 的 audience；要換須同時改 Keycloak audience mapper 與 ChatGPT 端連接器網址。Jenkins credential `WEBSOCKET_TYMB` 仍是 `ws://` 舊網域（伺服器端使用，舊網域 `/tymb` 照常服務）。
+- 各服務 repo 的 Ingress（backend、maya-sawa）刻意保留舊網域並加註解；新網域由 `mirror-ingress.yaml` 提供，兩邊同時宣告同一 host/path 會被 admission webhook 拒絕。
+- 驗證：新 token `iss=https://tymultiverse.cc/sso/realms/PeopleSystem`；同源呼叫 `/tymg/auth/user`、`/tymg/auth/admin`、`/tymg/people/get-all`、`/maya-sawa/market/auth-status`、`/api/market/portfolio` 皆 200。

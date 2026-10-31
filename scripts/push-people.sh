@@ -190,7 +190,7 @@ REMOTE
     # [驗證] 從「前端實際會走的公開網址」把 manifest 抓回來驗一次。
     # 光看上傳成功不夠 —— 之前就發生過檔案上去了但內容不是合法 JSON，
     # 前端靜默退回 probe，於是三人組永遠讀不到卻沒人發現。
-    local url="https://peoplesystem.tatdvsonorth.com/images/people/pair-videos.json"
+    local url="https://tymultiverse.cc/images/people/pair-videos.json"
     echo
     echo "[驗證] $url"
     local body

@@ -261,7 +261,7 @@ echo "cleaned /tmp"
   # A successful upload is not proof: previously the file landed but its content
   # was not valid JSON, so the frontend silently fell back to probing and the
   # 3-person videos never showed up. Verify the end state, not the step.
-  $url = "https://peoplesystem.tatdvsonorth.com/images/people/pair-videos.json"
+  $url = "https://tymultiverse.cc/images/people/pair-videos.json"
   Write-Host ""
   Write-Host "[verify] $url" -ForegroundColor Cyan
   try {

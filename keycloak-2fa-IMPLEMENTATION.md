@@ -127,12 +127,12 @@ kubectl restart -f k8s/keycloak-deployment.yaml
 
 ## 第 2 步：配置 SMTP（Email OTP 必要）
 
-登入 Keycloak Admin Console (`https://peoplesystem.tatdvsonorth.com/sso/admin/`)，选择你的 Realm（通常是 `master`）:
+登入 Keycloak Admin Console (`https://tymultiverse.cc/sso/admin/`)，选择你的 Realm（通常是 `master`）:
 
 1. **Realm Settings** → **Email** 标籤页
 2. 填入 SMTP 配置：
    ```
-   From: noreply@peoplesystem.tatdvsonorth.com
+   From: noreply@tymultiverse.cc
    From Display Name: People System
    SMTP Server Host: smtp.gmail.com (或你的邮件服务器)
    SMTP Server Port: 587 (TLS) 或 465 (SSL)
@@ -265,7 +265,7 @@ kubectl create secret generic twilio-credentials \
 
 ### 5.1 用户侧
 
-1. 用浏览器打开 `https://peoplesystem.tatdvsonorth.com/sso`
+1. 用浏览器打开 `https://tymultiverse.cc/sso`
 2. 点 **Login**，输入用户名密码
 3. 系统提示选择 2FA 方式（Email OTP 或 SMS OTP）
 4. 选择 Email OTP：

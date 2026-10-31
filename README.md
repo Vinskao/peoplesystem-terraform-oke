@@ -115,11 +115,11 @@ Host oke-node
 
 | 服務 | URL/Namespace | 說明 |
 |------|--------------|------|
-| Keycloak | `peoplesystem.tatdvsonorth.com/sso` | 身份認證（realm: master, PeopleSystem） |
-| Jenkins | `peoplesystem.tatdvsonorth.com/jenkins` | CI/CD（已接 Keycloak SSO + TOTP） |
-| Backend | `peoplesystem.tatdvsonorth.com/tymb` | Spring Boot API |
-| Frontend | `peoplesystem.tatdvsonorth.com/tymultiverse` | Astro 前端 |
-| Maya Sawa | `peoplesystem.tatdvsonorth.com/maya-sawa` | FastAPI AI 服務 |
+| Keycloak | `tymultiverse.cc/sso` | 身份認證（realm: master, PeopleSystem） |
+| Jenkins | `tymultiverse.cc/jenkins` | CI/CD（已接 Keycloak SSO + TOTP） |
+| Backend | `tymultiverse.cc/tymb` | Spring Boot API |
+| Frontend | `tymultiverse.cc/` | Astro 前端（2026-10-31 起在根路徑；舊網址 301） |
+| Maya Sawa | `tymultiverse.cc/maya-sawa` | FastAPI AI 服務 |
 
 > Terraform 部署流程、Ingress 設定、Jenkins SSO、Keycloak TOTP、Object Storage 操作指令請見 [AGENTS.md](AGENTS.md)。
 
