@@ -20,6 +20,9 @@
 - Gateway 的 `KeycloakController` 使用 `url.frontend` / `PUBLIC_FRONTEND_URL` 決定登入成功後的目標；client scope `birch.publish` 並非該登入回跳位置。需同時核對 Keycloak 客戶端 redirect URI、Gateway 實際值和 cookie 權限，再完整測試授權、回跳、登出。
 - 使用者工作目錄中部分 `k8s/deployment.yaml` 已將原域名改為新域名卻仍使用舊 `peoplesystem-tls` Secret；不能套用這些變更取代現有 Ingress，否則可能移除舊域路由並使用不符合新域的憑證。維持獨立新域 Ingress 和 `tymultiverse-cc-tls`，逐一核對 Maya、Gateway、backend 安全邊界後再決定哪些路徑可以接入。
 - Jenkins 從 Git checkout，單純重新觸發不會納入未提交修改；必須先審核、測試、依各專案正確切分並提交變更，確認實際 build commit 和部署 image，再驗證上線狀態。
+- OKE 目前 Keycloak Deployment 的 `KC_HOSTNAME` 為 `peoplesystem.tatdvsonorth.com`，`KC_HTTP_RELATIVE_PATH` 是 `/sso`；Gateway 的 `PUBLIC_FRONTEND_URL` 與 `KEYCLOAK_AUTH_SERVER_URL` 是由 Kubernetes Secret 注入。不要把 Secret 內容列入日誌或文件。只更改本機部署 YAML 不會自動更新這些線上配置或 Keycloak 客戶端 URI。
+- 2026-10-31 前端針對 home、SEO、API 與 contact 的局部測試結果為 53 通過、1 失敗：`tests/api/publicSpec.test.ts` 對 API 文案作舊字串斷言，與目前頁面不一致。需要核對實際授權能力並修正語意及測試；不可為了通過而保證未經驗證的私有資料存取保護。
+- 郵件移轉準備：Porkbun 已新增 `mx.tymultiverse.cc` A → `140.245.52.231`，TTL 600；`tymultiverse-domain/mail-certificate.yaml` 建立新的獨立 `mail-system/tymultiverse-mail-public` 憑證，已顯示 Ready，不取代舊信箱所使用的 `mail-public`。新網域 MX、OCI approved sender、DKIM、SPF、轉寄與 Thunderbird 設定尚未完成。線上 Postfix 目前仍服務 `peoplesystem.tatdvsonorth.com`，使用者批次替換後的郵件文件與本機設定不代表它已生效。Thunderbird 視窗存取工具未能選取該視窗；不得假稱已修改客戶端。新舊地址應並行直到兩者收發完整測試通過。
 
 ## 下次遷移的操作順序
 
