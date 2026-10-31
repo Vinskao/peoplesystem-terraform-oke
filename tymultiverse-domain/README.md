@@ -24,6 +24,17 @@
 - 2026-10-31 前端針對 home、SEO、API 與 contact 的局部測試結果為 53 通過、1 失敗：`tests/api/publicSpec.test.ts` 對 API 文案作舊字串斷言，與目前頁面不一致。需要核對實際授權能力並修正語意及測試；不可為了通過而保證未經驗證的私有資料存取保護。
 - 郵件移轉準備：Porkbun 已新增 `mx.tymultiverse.cc` A → `140.245.52.231`，TTL 600；`tymultiverse-domain/mail-certificate.yaml` 建立新的獨立 `mail-system/tymultiverse-mail-public` 憑證，已顯示 Ready，不取代舊信箱所使用的 `mail-public`。新網域 MX、OCI approved sender、DKIM、SPF、轉寄與 Thunderbird 設定尚未完成。線上 Postfix 目前仍服務 `peoplesystem.tatdvsonorth.com`，使用者批次替換後的郵件文件與本機設定不代表它已生效。Thunderbird 視窗存取工具未能選取該視窗；不得假稱已修改客戶端。新舊地址應並行直到兩者收發完整測試通過。
 
+## 2026-10-31 新網域收信已上線
+
+`tianyikao@tymultiverse.cc` 與舊地址並行收信，舊網域設定未變。
+
+- OCI（`ty-mail` 區室）：Email Domain `tymultiverse.cc`、DKIM selector `tymc20261031`（DNS 與簽章皆 Active）、Approved Sender `tianyikao@tymultiverse.cc`。Policy `ty-mail-relay-send` 條件改為 `any {email-domain = 'peoplesystem.tatdvsonorth.com', email-domain = 'tymultiverse.cc'}`；描述欄仍寫舊網域。
+- Porkbun DNS（TTL 600）：MX `tymultiverse.cc` → 10 `mx.tymultiverse.cc`；TXT `v=spf1 include:ap.rp.oracleemaildelivery.com -all`；CNAME `tymc20261031._domainkey` → `tymc20261031.tymultiverse.cc.dkim.xsp1.oracleemaildelivery.com`。未設 DMARC。
+- Postfix：`virtual_alias_domains` 加入新網域，三個地址（tianyikao／postmaster／abuse）轉 Gmail；`mail-public` 憑證同時涵蓋兩個 mx 名稱。另一張 `tymultiverse-mail-public` 憑證未掛載使用，可刪除。
+- 轉寄程式的寄件者仍是 `tianyikao@peoplesystem.tatdvsonorth.com`（`mail/relay/forward.py` 的 `SENDER`），ARC 只簽舊網域。要改寄件者時，先確認新 Approved Sender 可用，再改程式與 `test_oci_forward.py`。
+- 驗證：`verify_smtp.py` 新增 3 項（新地址 250、未知地址 550、憑證 SAN），部署前紅、部署後 11/11 綠；`verify_oci_config.py` 5/5、`verify_proxy_smtp.py` 4/4。外部探測 TLS1.3、250／550／554。Gmail → 新地址 → Gmail 往返主旨 `TY tymultiverse.cc roundtrip 20261031-1`，佇列 `09FEB2442551`，已進 Gmail。
+- Thunderbird 未設定；這套系統沒有 IMAP 信箱，收信仍在 Gmail。
+
 ## 下次遷移的操作順序
 
 1. 先逐一檢查前端、Gateway、backend、maya-sawa、consumer、common 和基礎設施的 `git status -sb`、`git diff` 與線上部署版本；工作目錄有使用者修改，禁止 reset、覆蓋或直接全量提交。列出新舊網域、`/tymultiverse` 在程式碼、CI、Kubernetes、Keycloak、DNS、排程、公開文件及郵件中的用途。保留需要相容的舊連結、寄信網域與歷史資料來源，不能機械式全域取代。

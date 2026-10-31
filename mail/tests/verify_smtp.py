@@ -7,6 +7,8 @@ import subprocess
 import unittest
 
 DOMAIN = 'peoplesystem.tatdvsonorth.com'
+# Served in parallel with DOMAIN until the new address is verified end to end.
+NEW_DOMAIN = 'tymultiverse.cc'
 
 
 class SmtpPolicyTests(unittest.TestCase):
@@ -44,6 +46,13 @@ class SmtpPolicyTests(unittest.TestCase):
                         for key, value in entry if key == 'commonName']
         self.assertIn(f'mx.{DOMAIN}', common_names)
         self.assertIn(('DNS', f'mx.{DOMAIN}'), self.smtp.sock.getpeercert()['subjectAltName'])
+        self.assertIn(('DNS', f'mx.{NEW_DOMAIN}'), self.smtp.sock.getpeercert()['subjectAltName'])
+
+    def test_new_domain_primary_address_is_accepted(self):
+        self.assertEqual(self.recipient(f'tianyikao@{NEW_DOMAIN}'), 250)
+
+    def test_new_domain_unknown_recipient_is_rejected_before_data(self):
+        self.assertEqual(self.recipient(f'not-a-mailbox@{NEW_DOMAIN}'), 550)
 
     def test_rspamd_configuration_is_valid(self):
         subprocess.run(['rspamadm', 'configtest'], check=True, capture_output=True)
@@ -63,6 +72,8 @@ class SmtpPolicyTests(unittest.TestCase):
         self.assertEqual(lookup(f'tianyikao@{DOMAIN}'), 'tianyikao@gmail.com')
         self.assertEqual(lookup(f'hello@{DOMAIN}'), '')
         self.assertEqual(lookup(f'@{DOMAIN}'), '')
+        self.assertEqual(lookup(f'tianyikao@{NEW_DOMAIN}'), 'tianyikao@gmail.com')
+        self.assertEqual(lookup(f'@{NEW_DOMAIN}'), '')
 
 
 if __name__ == '__main__':

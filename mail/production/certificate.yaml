@@ -10,3 +10,4 @@ spec:
     kind: ClusterIssuer
   dnsNames:
     - mx.peoplesystem.tatdvsonorth.com
+    - mx.tymultiverse.cc
