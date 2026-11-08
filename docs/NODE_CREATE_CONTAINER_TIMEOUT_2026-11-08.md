@@ -1,5 +1,7 @@
 # 節點建立容器逾時（CreateContainerError）事件與修法
 
+> **2026-11-08 更新：根因已查明並修復，見下方「根因（已證實）」。** 原先「容器執行環境吃 CPU」的推論是錯的：crio 只占 0.4% CPU。
+
 2026-11-08 frontend 部署後網站回 503 約一小時。部署策略是 `Recreate`，舊 pod 先停，新 pod 在 `10.0.159.167` 卡在 `CreateContainerError: context deadline exceeded`，沒有任何 pod 服務。
 
 ## 症狀與判斷流程
@@ -56,3 +58,42 @@ ssh oke-node "kubectl get pods -n default -o wide | grep ty-multiverse-frontend"
 3. 把量到的數字分成「已驗證」和「推論」寫下，推論不當成結論。
 4. 恢復服務是獨立步驟：cordon 與刪 pod 都改正式環境，先取得維運者同意；刪 pod 若重排回同一節點，再 cordon。
 5. 之後類似的部署：先確認策略是不是 `Recreate`；`Recreate` 加單節點資源緊張時，部署本身就會造成停機。
+
+
+## 根因（已證實，2026-11-08 14:00–14:30 UTC）
+
+```mermaid
+flowchart TD
+  R[rabbitmq-0 多次重啟] --> M[OCI 區塊卷 rabbitmq-data 每次重新掛載都因掛載傳播而翻倍]
+  M --> N[同一路徑重複掛載 4096 次：pod 路徑 4096 + globalmount 4096，共 8342 個掛載點]
+  N --> S[PID 1 systemd 與各使用者 systemd 每次掛載變動都重掃整張掛載表]
+  S --> C[ocarun 使用者 systemd 單獨 48% CPU、PID 1 約 20%]
+  P[PCP pmdaproc 觸發 SELinux 拒絕] --> T[setroubleshoot 分析約 30–45% CPU]
+  C --> X[1 核節點 CPU 吃滿，CreateContainer 逾時]
+  T --> X
+```
+
+查法：`kubectl debug node/10.0.159.167 --image=busybox:1.36 --profile=sysadmin -- chroot /host sh -c '...'`（節點不能 SSH，但 debug pod 可以進主機命名空間；小映像能正常建立容器）。
+
+| 時間 | 量測 | 數值 |
+|---|---|---|
+| 修復前 | `top`（5 秒樣本） | `systemd`(ocarun) 48.5%、`setroubleshoot` 27.6%+19.3%、PID 1 16%；crio 0.4% |
+| 修復前 | `wc -l /proc/1/mountinfo` | 8342；同一 CSI 卷（`csi-8ad31b60…`，PVC `rabbitmq-data-rabbitmq-0`）pod 路徑 4096 次、globalmount 4096 次 |
+| 修復前 | SELinux 拒絕 | `pmdaproc` getattr，5 分鐘 20 次；`getenforce` = Permissive |
+| 修復後 | 掛載數 | 151，rabbitmq 卷 1 次 |
+| 修復後 | cAdvisor 30 秒 | 節點 328m，其中 pod 286m（重開後 Java 暖機），pod 以外約 30m（修復前約 700m） |
+
+## 修法（已執行）
+
+1. `systemctl stop user@986.service`（ocarun 使用者 systemd，自 2026-09-09 起常駐）：CPU 由 0% 閒置變 95% 閒置，但數十秒後 root 使用者 systemd 又空轉，證明根因是掛載表，不是單一行程。
+2. `systemctl disable --now pmie pmlogger pmcd`、`systemctl mask --now setroubleshootd`：消除 SELinux 拒絕與 setroubleshoot 分析。復原：`systemctl unmask setroubleshootd; systemctl enable --now pmcd pmlogger pmie`。
+3. 經使用者同意重開節點（`systemctl reboot`，約 7 分鐘恢復）：洩漏掛載清空，所有 pod 原地重啟成功，網站 200。
+4. `kubectl uncordon 10.0.159.167`。
+5. image-server 快取與 MIME 修正，設定檔進版控：`image-server/nginx.conf`（見 `image-server/README.md`）。驗證結果：`video/mp4`、`image/png`、單一 `Cache-Control: public, max-age=86400, must-revalidate`。
+
+## 預防與待辦
+
+- **監控掛載數**：`/proc/1/mountinfo` 超過 1000 行就是異常；rabbitmq-0 每次重啟後檢查 `grep -c 8ad31b60 /proc/1/mountinfo` 應為 1。若再翻倍，查 OCI CSI node plugin 版本與掛載傳播設定。
+- PCP 與 setroubleshoot 只在這台停用；另一台 `10.0.158.183` 尚未檢查。
+- frontend deployment 仍是 `Recreate`；建議改 `RollingUpdate`（`maxUnavailable: 0`）。
+- 重開節點只清掉症狀，掛載翻倍的觸發條件（rabbitmq 重啟後 CSI 重新掛載）還在。
