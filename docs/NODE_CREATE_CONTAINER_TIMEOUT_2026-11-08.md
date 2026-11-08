@@ -94,6 +94,6 @@ flowchart TD
 ## 預防與待辦
 
 - **監控掛載數**：`/proc/1/mountinfo` 超過 1000 行就是異常；rabbitmq-0 每次重啟後檢查 `grep -c 8ad31b60 /proc/1/mountinfo` 應為 1。若再翻倍，查 OCI CSI node plugin 版本與掛載傳播設定。
-- PCP 與 setroubleshoot 只在這台停用；另一台 `10.0.158.183` 尚未檢查。
+- 另一台 `10.0.158.183`：掛載數 187 正常，但 10 分鐘 498 次 SELinux 拒絕；同樣停用 PCP、遮蔽 setroubleshootd 後拒絕降為 0，CPU 閒置由 66.8% 升到 89.9%。兩台都已處理。
 - frontend deployment 仍是 `Recreate`；建議改 `RollingUpdate`（`maxUnavailable: 0`）。
 - 重開節點只清掉症狀，掛載翻倍的觸發條件（rabbitmq 重啟後 CSI 重新掛載）還在。
