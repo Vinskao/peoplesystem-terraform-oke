@@ -78,3 +78,35 @@ SMTP server：`smtp.email.ap-singapore-2.oci.oraclecloud.com`；587搭配STARTTL
 Thunderbird、Apple Mail等可設定獨立SMTP identity，但收件仍用Gmail帳戶；這套系統沒有新增IMAP／POP信箱。部分軟體的簡化帳戶設定不接受這種收寄分離，需要進階設定。Gmail的Send-as不保證自動同步成其他軟體的寄件身分。
 
 官方：[Gmail Send as](https://support.google.com/mail/answer/22370?hl=en)、[OCI SMTP設定](https://docs.oracle.com/en-us/iaas/Content/Email/Reference/gettingstarted_topic-Configure_the_SMTP_connection.htm)。
+
+## 2026-11-09 公開入口改為 Kubernetes 管理的專用 NLB
+
+**事故：** 外部寄到 `tianyikao@tymultiverse.cc` 的信（Spotify 驗證碼）沒有到。外部連 140.245.52.231:25 逾時（同一個 IP 的 443 正常、本機連 Gmail MX 的 25 埠正常），但 Pod 內 2525 收件正常。原因推定：TCP25 監聽器 `TY-MAIL-25` 是在 Console **手動**加到 ingress-nginx 的 LB 上，該 LB 由 OCI cloud-controller 依 ingress-nginx Service（只宣告 80／443／5432）調和，手動監聽器會在調和時消失。因無 OCI 讀取權限，未直接證實監聽器已被刪除。
+
+**修正：** 新增 `mail/production/smtp-public-nlb.yaml`：`type: LoadBalancer` 的 OCI Network Load Balancer，`is-preserve-source` 加 `externalTrafficPolicy: Local` 保留來源 IP，25 → Postfix 新的直連監聽器 2526（`oci-relay/user-patches.sh`，不需 PROXY header，收件限制同 25 埠）。舊 2525／`TY-MAIL-25` 路徑保留未動。
+
+```mermaid
+flowchart LR
+    S[外部寄件 MTA] --> MX[MX mx.tymultiverse.cc]
+    MX --> N["OCI NLB 140.245.50.88:25<br/>Service mail-smtp-public（K8s 管理）"]
+    N -->|保留來源 IP| P[Postfix 2526 直連監聽器]
+    P --> Q[持久佇列] --> F[轉寄程式] --> O[OCI SMTP465] --> G[Gmail]
+    L["舊：ingress LB 140.245.52.231:25<br/>手動監聽器 TY-MAIL-25（會被調和刪除）"] -.保留不動.-> P2[Postfix 2525 PROXY]
+```
+
+**驗證：** `mail/tests/verify_direct_smtp.py`（5 項）部署前在 Pod 內紅燈（2526 未開），部署後綠燈；`verify_smtp.py` 11/11、`verify_proxy_smtp.py` 4/4 維持綠燈。從外部直連 140.245.50.88:25：banner 220、兩個網域的 `tianyikao@` 回 250、未知地址 550、外部轉送 554、STARTTLS 憑證含兩個 mx 名稱。
+
+**DNS：** Porkbun `mx.tymultiverse.cc` A 改為 140.245.50.88。舊網域 `mx.peoplesystem.tatdvsonorth.com`（Hostinger）依使用者決定暫不改，仍指向舊 LB。
+
+### 開發方法
+
+1. 先從外部分段測：本機到 Gmail MX 25（排除家用網路擋 25）、到本 LB 的 443 與 25、Pod 內 2525，找出斷在 LB 這段。不要只看 Pod Running、佇列為空就說正常。
+2. 先寫 `verify_direct_smtp.py`，在線上 Pod 跑出紅燈，再改設定。
+3. **從 Windows 打包 `mail/` 會帶 CRLF**（git `core.autocrlf=true`）；`user-patches.sh` 帶 `` 會讓 Pod 啟動失敗。部署前在管理節點的副本 `sed -i 's/$//'`，並確認 `grep -rlI $'' mail` 為 0。
+4. 套用前用 `kubectl apply --dry-run=server` 與 `kubectl diff`，並把新 ConfigMap 逐鍵和線上版本比對，確認只有預期的行改變。
+5. 套用後先在 Pod 內跑新舊測試，再從外部對新 IP 測，最後才改 DNS 並做真實往返。
+
+### 回復與待辦
+
+- 回復：`kubectl -n mail-system delete svc mail-smtp-public`（NLB 會移除），Porkbun A 改回 140.245.52.231。2526 監聽器留著無害。
+- 待辦：NLB 的公開 IP 是**臨時 IP**，Service 被刪除重建就會變；要固定需在 OCI 申請保留公開 IP，並在 Service 指定。`security-list-management-mode: All` 讓 cloud-controller 自動開放該 NodePort 與健康檢查埠。

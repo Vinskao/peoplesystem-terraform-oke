@@ -1,0 +1,30 @@
+# Dedicated public SMTP entry point, owned by Kubernetes (2026-11-09).
+#
+# Why: the old path was a listener (TY-MAIL-25) added by hand in the OCI Console to the
+# ingress-nginx load balancer. That load balancer is reconciled by the OCI cloud controller
+# against the ingress-nginx Service, which only declares 80/443/5432, so the hand-made
+# listener can disappear on any reconcile. On 2026-11-09 public TCP/25 timed out while the
+# pod itself still accepted mail. This Service makes the listener part of desired state.
+#
+# OCI Network Load Balancer: no PROXY header; it preserves the client source IP instead
+# (is-preserve-source + externalTrafficPolicy Local), so Postfix sees the real sender IP
+# on the direct listener 2526 (see oci-relay/user-patches.sh).
+apiVersion: v1
+kind: Service
+metadata:
+  name: mail-smtp-public
+  annotations:
+    oci.oraclecloud.com/load-balancer-type: "nlb"
+    oci-network-load-balancer.oraclecloud.com/is-preserve-source: "true"
+    # Let the cloud controller open exactly the NodePort/health-check port it needs.
+    oci-network-load-balancer.oraclecloud.com/security-list-management-mode: "All"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector:
+    app: ty-mail
+  ports:
+    - name: smtp
+      port: 25
+      targetPort: 2526
+      protocol: TCP

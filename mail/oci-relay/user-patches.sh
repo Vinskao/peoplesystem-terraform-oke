@@ -17,4 +17,8 @@ postconf -e 'message_size_limit = 1000000'
 # Local health checks and administrative probes retain the ordinary port 25.
 postconf -M '2525/inet=2525 inet n - n - - smtpd'
 postconf -P '2525/inet/smtpd_upstream_proxy_protocol=haproxy'
+# Direct backend for the dedicated OCI Network Load Balancer (mail/production/smtp-public-nlb.yaml).
+# The NLB preserves the client source IP itself, so this listener takes no PROXY header.
+# Same smtpd restrictions as port 25: allowlisted recipients only, no open relay.
+postconf -M '2526/inet=2526 inet n - n - - smtpd'
 postfix check
