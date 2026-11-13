@@ -126,3 +126,5 @@ Host oke-node
 ## 授權
 
 Copyright (c) 2017, 2024 Oracle Corporation and/or its affiliates. Licensed under the [Universal Permissive License 1.0](./LICENSE).
+
+Maya routing deployment: [Gateway phase 2](docs/MAYA_GATEWAY_PHASE2.md).

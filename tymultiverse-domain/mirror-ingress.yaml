@@ -107,30 +107,30 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: maya-sawa
+                name: ty-multiverse-gateway-service
                 port:
-                  number: 80
+                  number: 8082
           - path: /maya-v2/
             pathType: Prefix
             backend:
               service:
-                name: maya-sawa
+                name: ty-multiverse-gateway-service
                 port:
-                  number: 80
+                  number: 8082
           - path: /voyeur/
             pathType: Prefix
             backend:
               service:
-                name: maya-sawa
+                name: ty-multiverse-gateway-service
                 port:
-                  number: 80
+                  number: 8082
           - path: /paprika/
             pathType: Prefix
             backend:
               service:
-                name: maya-sawa
+                name: ty-multiverse-gateway-service
                 port:
-                  number: 80
+                  number: 8082
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -154,9 +154,9 @@ spec:
             pathType: Exact
             backend:
               service:
-                name: maya-sawa
+                name: ty-multiverse-gateway-service
                 port:
-                  number: 80
+                  number: 8082
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
