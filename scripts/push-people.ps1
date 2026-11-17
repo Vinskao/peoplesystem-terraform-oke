@@ -10,7 +10,7 @@
 # Bump this whenever the script changes. It is printed on every run so that a
 # pasted log immediately shows which version produced it - the profile only
 # re-reads this file when it loads, so a stale session is easy to miss.
-$script:PushPeopleVersion = '2026.08.10-3'
+$script:PushPeopleVersion = '2026.11.17-1'
 
 # Re-reads this file into the current session. Use after the repo copy changes,
 # instead of remembering `. $PROFILE` (which also re-runs everything else).
@@ -168,12 +168,25 @@ set -u
 POD=$(kubectl get pod -l app=image-server -o jsonpath="{.items[0].metadata.name}")
 if [ -z "$POD" ]; then echo "ERROR: image-server pod not found"; exit 1; fi
 
+# kubectl cp can fail on a single file (seen 2026-11-17: 231 uploaded, 230 migrated, then /tmp was wiped and the
+# file was lost). Retry, check the size in the pod, and keep any file that still fails so it can be retried.
 n=0
+: > /tmp/_failed.txt
 for f in /tmp/*.png /tmp/*.mp4; do
   [ -f "$f" ] || continue
-  kubectl cp "$f" "$POD:/images/people/$(basename "$f")" >/dev/null 2>&1 && n=$((n+1))
+  name=$(basename "$f"); want=$(wc -c < "$f" | tr -d ' '); ok=0
+  for try in 1 2 3; do
+    kubectl cp "$f" "$POD:/images/people/$name" >/dev/null 2>&1
+    got=$(kubectl exec "$POD" -- wc -c "/images/people/$name" 2>/dev/null | awk '{print $1}')
+    if [ "$got" = "$want" ]; then ok=1; break; fi
+    sleep 2
+  done
+  if [ "$ok" = 1 ]; then n=$((n+1)); else echo "$name" >> /tmp/_failed.txt; fi
 done
 echo "migrated $n files into $POD"
+if [ -s /tmp/_failed.txt ]; then
+  echo "[x] FAILED to migrate (kept in oke-node:/tmp, run push-people again):"; sed 's/^/    /' /tmp/_failed.txt
+fi
 
 # manifest: the frontend "build video cache" reads this in ONE request instead of
 # brute-forcing thousands of HEAD probes. It is also the only way 3+ person
@@ -221,7 +234,7 @@ if [ "$actual_head" != "$expected_head" ]; then
   echo "ERROR: manifest is malformed - not uploading"
   echo "  expected: $expected_head"
   echo "  actual  : $actual_head"
-  rm -f /tmp/*.png /tmp/*.mp4 /tmp/_mp4s.txt /tmp/pair-videos.json
+  for f in /tmp/*.png /tmp/*.mp4; do [ -f "$f" ] && ! grep -qx "$(basename "$f")" /tmp/_failed.txt && rm -f "$f"; done; rm -f /tmp/_mp4s.txt /tmp/pair-videos.json
   exit 1
 fi
 
@@ -232,8 +245,8 @@ else
   echo "WARN: manifest upload failed"
 fi
 
-rm -f /tmp/*.png /tmp/*.mp4 /tmp/_mp4s.txt /tmp/pair-videos.json
-echo "cleaned /tmp"
+for f in /tmp/*.png /tmp/*.mp4; do [ -f "$f" ] && ! grep -qx "$(basename "$f")" /tmp/_failed.txt && rm -f "$f"; done; rm -f /tmp/_mp4s.txt /tmp/pair-videos.json
+if [ -s /tmp/_failed.txt ]; then echo "cleaned /tmp (except the failed files above)"; else rm -f /tmp/_failed.txt; echo "cleaned /tmp"; fi
 '@
 
   # Never pipe $remote to ssh's stdin, and never pass it as a literal argument.

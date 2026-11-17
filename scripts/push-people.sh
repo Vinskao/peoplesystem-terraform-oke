@@ -7,7 +7,7 @@
 # 每次改動就更新版本號。它會在每次執行時印出來，
 # 貼 log 給人看時一眼就知道跑的是哪一版 —— profile 只在載入時讀這個檔，
 # session 停在舊版是很容易忽略的陷阱。
-PUSH_PEOPLE_VERSION='2026.08.01-1'
+PUSH_PEOPLE_VERSION='2026.11.17-1'
 
 push-people() {
   echo "push-people v$PUSH_PEOPLE_VERSION"
@@ -122,12 +122,25 @@ set -u
 POD=$(kubectl get pod -l app=image-server -o jsonpath="{.items[0].metadata.name}")
 if [ -z "$POD" ]; then echo "ERROR: image-server pod not found"; exit 1; fi
 
+# kubectl cp can fail on a single file (seen 2026-11-17: 231 uploaded, 230 migrated, then /tmp was wiped and the
+# file was lost). Retry, check the size in the pod, and keep any file that still fails so it can be retried.
 n=0
+: > /tmp/_failed.txt
 for f in /tmp/*.png /tmp/*.mp4; do
   [ -f "$f" ] || continue
-  kubectl cp "$f" "$POD:/images/people/$(basename "$f")" >/dev/null 2>&1 && n=$((n+1))
+  name=$(basename "$f"); want=$(wc -c < "$f" | tr -d ' '); ok=0
+  for try in 1 2 3; do
+    kubectl cp "$f" "$POD:/images/people/$name" >/dev/null 2>&1
+    got=$(kubectl exec "$POD" -- wc -c "/images/people/$name" 2>/dev/null | awk '{print $1}')
+    if [ "$got" = "$want" ]; then ok=1; break; fi
+    sleep 2
+  done
+  if [ "$ok" = 1 ]; then n=$((n+1)); else echo "$name" >> /tmp/_failed.txt; fi
 done
 echo "migrated $n files into $POD"
+if [ -s /tmp/_failed.txt ]; then
+  echo "[x] FAILED to migrate (kept in oke-node:/tmp, run push-people again):"; sed 's/^/    /' /tmp/_failed.txt
+fi
 
 # 影片清單 manifest：前端「建立影片快取」靠它一次 GET 取代數千次 HEAD 探測，
 # 也是三人以上影片（A_B_C.mp4）唯一能被發現的途徑 —— 用猜的是 O(N^3)。
@@ -173,7 +186,7 @@ if [ "$actual_head" != "$expected_head" ]; then
   echo "ERROR: manifest 格式錯誤，不上傳（引號可能被吃掉）"
   echo "  expected: $expected_head"
   echo "  actual  : $actual_head"
-  rm -f /tmp/*.png /tmp/*.mp4 /tmp/_mp4s.txt /tmp/pair-videos.json
+  for f in /tmp/*.png /tmp/*.mp4; do [ -f "$f" ] && ! grep -qx "$(basename "$f")" /tmp/_failed.txt && rm -f "$f"; done; rm -f /tmp/_mp4s.txt /tmp/pair-videos.json
   exit 1
 fi
 
@@ -184,8 +197,8 @@ else
   echo "WARN: manifest upload failed"
 fi
 
-rm -f /tmp/*.png /tmp/*.mp4 /tmp/_mp4s.txt /tmp/pair-videos.json
-echo "cleaned /tmp"
+for f in /tmp/*.png /tmp/*.mp4; do [ -f "$f" ] && ! grep -qx "$(basename "$f")" /tmp/_failed.txt && rm -f "$f"; done; rm -f /tmp/_mp4s.txt /tmp/pair-videos.json
+if [ -s /tmp/_failed.txt ]; then echo "cleaned /tmp (except the failed files above)"; else rm -f /tmp/_failed.txt; echo "cleaned /tmp"; fi
 REMOTE
     # [驗證] 從「前端實際會走的公開網址」把 manifest 抓回來驗一次。
     # 光看上傳成功不夠 —— 之前就發生過檔案上去了但內容不是合法 JSON，

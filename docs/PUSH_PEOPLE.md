@@ -151,3 +151,11 @@ push-people
 | 前端 hover 沒影片 | 快取沒建或已過期 —— 到 palais group 頁按「建立影片快取」。有 manifest 的話這是一次 GET，很快 |
 | `manifest upload failed` | pod 內 `/images/people` 可能唯讀，或 `kubectl exec` 權限不足。檢查 `kubectl describe pod` |
 | 改了影片但前端還是舊的 | CDN/瀏覽器快取。hard refresh，或在 group 頁按「刷新圖片」換時間戳 |
+
+## 單一檔案遷移失敗（2026-11-17，v2026.11.17-1）
+
+曾發生「上傳 231 個、遷移 230 個」，少的那張（DelsaBusiness.png）因為 `kubectl cp` 偶發失敗，錯誤又被 `>/dev/null 2>&1` 吞掉，最後 `/tmp` 被清空，檔案就不見了。現在遷移步驟：
+
+- 每個檔案最多重試 3 次，並用 `kubectl exec ... wc -c` 比對 pod 內的檔案大小，一致才算成功；
+- 仍失敗的檔名會印出 `[x] FAILED to migrate`，並**留在 oke-node:/tmp**，不會被清掉，重跑 `push-people` 即可；
+- 看到「migrated N」小於「Uploading N」就要留意。
