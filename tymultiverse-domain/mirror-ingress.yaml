@@ -186,6 +186,9 @@ kind: Ingress
 metadata:
   name: tymcc-ty-multiverse-gateway
   namespace: default
+  annotations:
+    # The Keycloak callback can return cookies larger than the default response header buffer.
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
 spec:
   ingressClassName: nginx
   tls:
