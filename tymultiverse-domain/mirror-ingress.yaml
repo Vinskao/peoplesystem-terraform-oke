@@ -163,9 +163,6 @@ kind: Ingress
 metadata:
   name: tymcc-ty-multiverse-backend
   namespace: default
-  annotations:
-    # TCX workout files shared from the iPhone Shortcut (POST /tymb/health-data/workout-tcx); the default 1m refuses them with 413.
-    nginx.ingress.kubernetes.io/proxy-body-size: "32m"
 spec:
   ingressClassName: nginx
   tls:
