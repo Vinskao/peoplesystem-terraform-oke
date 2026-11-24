@@ -177,9 +177,39 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: ty-multiverse-backend
+                name: ty-multiverse-gateway-service
                 port:
-                  number: 80
+                  number: 8082
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tymcc-ty-multiverse-backend-tcx
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "30m"
+    # This host's existing rewrite-target makes ingress-nginx render all paths as regexes.
+    # Anchor the TCX match explicitly so suffixes and case variants keep the default limit.
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - tymultiverse.cc
+      secretName: tymultiverse-cc-tls
+  rules:
+    - host: tymultiverse.cc
+      http:
+        paths:
+          - path: "/(?-i:tymb/health-data/workout-tcx)$"
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: ty-multiverse-gateway-service
+                port:
+                  number: 8082
+
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
